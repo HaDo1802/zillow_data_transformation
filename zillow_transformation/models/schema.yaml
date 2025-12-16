@@ -1,0 +1,53 @@
+version: 2
+
+models:
+  - name: dim_property
+    description: Property dimension table
+    columns:
+      - name: property_id
+        tests:
+          - not_null
+          - unique
+
+  - name: dim_date
+    description: Date dimension table
+    columns:
+      - name: date_id
+        tests:
+          - not_null
+          - unique
+
+  - name: dim_location
+    description: Location dimension table
+    columns:
+      - name: location_id
+        tests:
+          - not_null
+          - unique
+
+  - name: fct_property_listing
+    description: Fact table capturing one property per snapshot date
+    columns:
+      - name: property_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_property')
+                field: property_id
+
+      - name: snapshot_date_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_date')
+                field: date_id
+
+      - name: location_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_location')
+                field: location_id

@@ -1,0 +1,9 @@
+version: 2
+
+sources:
+  - name: real_estate_data
+    database: zillow_api
+    schema: real_estate_data
+    tables:
+      - name: properties_data_history
+        description: Raw property listing snapshot data

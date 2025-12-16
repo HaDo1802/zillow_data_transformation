@@ -1,0 +1,48 @@
+fct_property_listing
+--------------------
+property_listing_id PK int
+property_id int FK >- dim_property.property_id
+snapshot_date_id int FK >- dim_date.date_id
+location_id int FK >- dim_location.location_id
+price numeric
+coming_soon bool
+contingent_type NULL string
+date_price_changed_id NULL int FK >- dim_date.date_id
+
+
+
+
+dim_property
+------------
+property_id PK int
+zillow_property_id string INDEX
+bedrooms int
+bathrooms float
+lot_size NULL numeric
+property_type string
+
+
+
+
+dim_location
+------------
+location_id PK int
+country string
+state string
+city string
+zip_code string
+
+
+
+
+dim_date
+--------
+date_id PK int
+day_of_week int
+day_of_week_name string
+day_of_month int
+cal_month int
+cal_month_name string
+cal_quarter int
+cal_year int
+is_weekend bool
