@@ -1,14 +1,15 @@
-{{ config(
-    materialized='view',
-    tags=['dim', 'mart']
-) }}
+select
+    zillow_property_id as property_id,
 
-select distinct
-    zillow_property_id,
-    property_type,
+    price,
     bedrooms,
     bathrooms,
     living_area,
-    lot_size,
-    normalized_lot_size
-from {{ ref('stg_properties') }}
+    lot_area,
+    property_type,
+    listing_status,
+    rent_zestimate,
+    zestimate
+
+from {{ ref('snap_property') }}
+where dbt_valid_to is null

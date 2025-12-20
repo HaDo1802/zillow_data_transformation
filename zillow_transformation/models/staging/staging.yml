@@ -1,0 +1,21 @@
+version: 2
+
+models:
+  - name: stg_properties
+    description: Cleaned and standardized Zillow property snapshots
+    columns:
+      - name: zillow_property_id
+        description: Zillow unique identifier for the property
+        tests:
+          - not_null
+
+      - name: snapshot_date
+        description: Date the property snapshot was taken
+        tests:
+          - not_null
+
+      - name: price
+        description: Listing price at snapshot time
+
+      - name: propertyType
+        description: Zillow property classification

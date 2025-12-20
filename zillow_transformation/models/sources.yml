@@ -2,8 +2,16 @@ version: 2
 
 sources:
   - name: real_estate_data
-    database: zillow_api
+    description: Raw Zillow property snapshot data ingested daily
     schema: real_estate_data
     tables:
       - name: properties_data_history
-        description: Raw property listing snapshot data
+        description: Historical snapshots of Zillow property listings
+        freshness:
+          warn_after:
+            count: 2
+            period: day
+          error_after:
+            count: 4
+            period: day
+        loaded_at_field: loaded_at

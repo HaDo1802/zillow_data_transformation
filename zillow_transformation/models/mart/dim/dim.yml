@@ -1,0 +1,39 @@
+version: 2
+
+models:
+  - name: dim_property
+    description: Current-state property dimension
+    columns:
+      - name: property_id
+        description: Surrogate key for property
+        tests:
+          - not_null
+          - unique
+
+      - name: bedrooms
+        description: Number of bedrooms
+
+      - name: bathrooms
+        description: Number of bathrooms
+
+      - name: property_type
+        description: Type of property
+        tests:
+          - accepted_values:
+              values: ['Single Family', 'Condo', 'Townhouse', 'Multi Family', 'Apartment']
+              
+  - name: dim_location
+    description: Property geographic dimension
+    columns:
+      - name: location_id
+        tests:
+          - not_null
+          - unique
+
+      - name: city
+        tests:
+          - not_null
+
+      - name: state
+        tests:
+          - not_null

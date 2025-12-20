@@ -1,0 +1,35 @@
+version: 2
+
+models:
+  - name: fact_property_listing
+    description: Daily snapshot fact table for property listings
+    columns:
+      - name: property_id
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_property')
+              field: property_id
+
+      - name: date_id
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_date')
+              field: date_id
+
+      - name: location_id
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_location')
+              field: location_id
+
+      - name: price
+        description: Listing price at snapshot time
+
+      - name: days_on_zillow
+        description: Days since listing first appeared
+
+      - name: has_image
+        description: Whether listing has images

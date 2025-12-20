@@ -1,9 +1,4 @@
-{{ config(
-    materialized='view',
-    tags=['dim', 'mart']
-) }}
-
-select
+select distinct
     {{ dbt_utils.generate_surrogate_key([
         'street_address',
         'city',
