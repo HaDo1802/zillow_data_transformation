@@ -2,9 +2,14 @@ version: 2
 
 models:
   - name: fact_property_listing
-    description: Daily snapshot fact table for property listings
+    description: |
+      Weekly snapshot fact table for property listings.
+      Grain: One row per property per snapshot week.
+      Captures price, valuations, and listing activity at time of snapshot.
+    
     columns:
       - name: property_id
+        description: Foreign key to dim_property
         tests:
           - not_null
           - relationships:
@@ -12,6 +17,7 @@ models:
               field: property_id
 
       - name: date_id
+        description: Foreign key to dim_date (snapshot date)
         tests:
           - not_null
           - relationships:
@@ -19,6 +25,7 @@ models:
               field: date_id
 
       - name: location_id
+        description: Foreign key to dim_location
         tests:
           - not_null
           - relationships:
@@ -27,9 +34,49 @@ models:
 
       - name: price
         description: Listing price at snapshot time
+        tests:
+          - not_null
+
+      - name: zestimate
+        description: Zillow's estimated market value
+
+      - name: rent_zestimate
+        description: Zillow's estimated monthly rent
+
+      - name: price_change
+        description: Price change since last update
 
       - name: days_on_zillow
         description: Days since listing first appeared
+        tests:
+          - not_null
 
       - name: has_image
         description: Whether listing has images
+
+      - name: has_video
+        description: Whether listing has video tour
+
+      - name: has_3d_model
+        description: Whether listing has 3D model
+
+      - name: is_open_house
+        description: Whether open house is scheduled
+
+      - name: is_fsba
+        description: For Sale By Agent flag
+
+      - name: snapshot_date
+        description: Date of this weekly snapshot
+        tests:
+          - not_null
+
+      - name: extracted_at
+        description: Timestamp when data was extracted from API
+
+    # Data quality tests
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - property_id
+            - date_id

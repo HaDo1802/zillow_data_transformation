@@ -6,30 +6,27 @@
         unique_key='zillow_property_id',
         strategy='check',
         check_cols=[
-            'price',
             'bedrooms',
             'bathrooms',
             'living_area',
             'lot_area',
             'property_type',
-            'listing_status',
-            'rent_zestimate',
-            'zestimate'
+            'listing_status'
         ]
     )
 }}
 
 select
     zillow_property_id,
-    price,
+    
+    -- Only dimensional attributes (structural changes)
     bedrooms,
     bathrooms,
     living_area,
     lot_area,
     property_type,
-    listing_status,
-    rent_zestimate,
-    zestimate
+    listing_status
+
 from {{ ref('stg_properties') }}
 
 {% endsnapshot %}
