@@ -2,9 +2,8 @@
 
 This project implements a **modern, production-style data transformation pipeline** for real estate analytics using historical Zillow property listing data. Raw snapshot-based listing data is transformed into a **well-structured star schema** using **dbt**, enabling time-aware analysis of property prices, listing behavior, and market dynamics.
 
-The project closely follows **industry best practices** in dimensional modeling, Slowly Changing Dimensions (SCD Type 2), incremental fact tables, data quality testing, and documentation-driven development.
-
----
+The project follows **industry best practices** in dimensional modeling, incremental fact tables, data quality testing, and documentation-driven development.
+![Tech Stack](data_model_material/tech_stack.png)
 
 ## 🗂 Project Structure
 
@@ -12,22 +11,27 @@ The project closely follows **industry best practices** in dimensional modeling,
 real_estate_transformation/
 ├── zillow_transformation/
 │   ├── models/
-│   │   ├── staging/                    # Source-aligned cleaned models
-│   │   │   └── stg_properties.sql
-│   │   ├── mart/
-│   │   │   ├── dim/                    # Dimension tables
+│   │   ├── silver/
+│   │   │   ├── staging/                # Source-aligned cleaned models
+│   │   │   │   └── stg_zillow_property_master.sql
+│   │   │   ├── intermediate/           # History + latest rollups
+│   │   │   │   ├── int_zillow_property_history.sql
+│   │   │   │   └── int_zillow_property_latest.sql
+│   │   │   └── schema.yml              # Silver tests & documentation
+│   │   ├── gold/
+│   │   │   ├── dimensions/
 │   │   │   │   ├── dim_property.sql
-│   │   │   │   ├── dim_location.sql
 │   │   │   │   └── dim_date.sql
-│   │   │   └── fact/                   # Fact tables
-│   │   │       └── fact_property_listing.sql
-│   │   ├── schema.yml                  # Tests & documentation
-│   ├── snapshots/
-│   │   └── snap_property.sql           # SCD Type 2 snapshot
+│   │   │   ├── facts/
+│   │   │   │   ├── fact_property_snapshot.sql
+│   │   │   │   └── fact_property_latest.sql
+│   │   │   └── schema.yml              # Gold tests & documentation
+│   ├── models/sources.yml
 │   ├── dbt_project.yml
 │   └── packages.yml
-├── data_model/                         # Schema diagrams & definitions
-│   └── star_schema.txt
+├── data_model_material/                # Schema diagrams & definitions
+│   ├── Star_schema.png
+│   └── tech_stack.png
 └── README.md
 ```
 
@@ -35,20 +39,20 @@ real_estate_transformation/
 
 ## ⚙️ Technology Stack
 
-- **Data Source**: Zillow API — historical property listing data
+- **Data Source**: Historical Zillow property listings, ingested via API and stored in AWS S3
 - **Programming Language**: SQL + Jinja (dbt)
 - **Data Warehouse**: PostgreSQL
 - **Transformation Tool**: dbt Core (v1.10+)
 - **Modeling Approach**: Kimball Star Schema
-- **Change Tracking**: dbt Snapshots (SCD Type 2)
+- **Change Tracking**: Snapshot-based history in silver + incremental facts in gold
 
 > This project intentionally uses PostgreSQL to demonstrate that dbt is effective beyond cloud-native warehouses.
 
 ---
 
 ## 🧱 Data Architecture
-
-### 1️⃣ Data Source
+This project leverages the bronze-silver-gold methodology to structure data flow and modeling, ensuring clear separation between raw ingestion, standardized staging, and analytics-ready outputs.
+### 1️⃣ Data Source (Bronze)
 
 Property listing data is ingested from the Zillow API and stored as a **history table**. For details about scraping and ingestion process, please refer to my repo about [zillow_data_extract](https://github.com/HaDo1802/zillow_data_extract).
 
@@ -68,9 +72,9 @@ This raw table is **append-only** and preserves the full change history.
 
 ---
 
-### 2️⃣ Staging Layer
+### 2️⃣ Staging Layer (Silver)
 
-**Model: `stg_properties`**
+**Model: `stg_zillow_property_master`**
 
 Purpose:
 - Standardize column names (`snake_case`)
@@ -79,13 +83,25 @@ Purpose:
 - Preserve original grain
 
 Grain:
-> One row per property per snapshot date, defined by each time the pipeline is triggered.
+> One row per property per snapshot date, defined by each ingestion run.
 
 The staging layer acts as a **contract** between raw ingestion and business modeling.
 
 ---
 
-## 🌐 Data Modeling Approach
+### 3️⃣ Business-Ready Layer (Gold)
+
+Purpose:
+- Curate **analytics-ready** dimensions and facts for BI and reporting
+- Provide **consistent grains** and conformed keys
+- Support **point-in-time** analysis via snapshot facts
+
+Grain:
+> Dimensions are **one row per property** (latest known attributes), and the primary fact is **one row per property per snapshot date**, powering sclable, quick, and accurate business analysis.
+
+---
+
+## 🌐 Data Modeling Approach ( How to brainstorm for Gold Layer)
 
 ### Step 1: Business Process
 
@@ -111,29 +127,17 @@ This grain ensures:
 
 ### Step 3: Identify Dimensions
 
-Dimensions provide descriptive context around each listing snapshot.
+Dimensions provide descriptive context around each listing snapshot. Leveraging **Slowly Changing Dimension 2 (SCD 2)** to overwrite the location-based columns, which happens rarely.
 
 #### `dim_property`
-Describes relatively stable property characteristics:
-- bedrooms
-- bathrooms
-- living_area
-- lot_area
-- property_type
-
-Implemented as **SCD Type 2** to preserve historical changes.
-
----
-
-#### `dim_location`
-Describes where the property is located:
+Latest known property attributes including location details:
+- street_address
 - city
 - state
 - zip_code
 - vegas_district
 - latitude / longitude
-
-Used for geographic slicing and aggregation.
+- property_type
 
 ---
 
@@ -149,7 +153,7 @@ Used for all time-based joins.
 
 ### Step 4: Facts for Measurement
 
-#### `fact_property_listing`
+#### `fact_property_snapshot`
 
 Stores **time-variant, measurable metrics** for each snapshot:
 
@@ -158,17 +162,17 @@ Metrics:
 - zestimate
 - rent_zestimate
 - days_on_zillow
+- bedrooms
+- bathrooms
+- living_area
+- normalized_lot_area_value / normalized_lot_area_unit
+- listing_status
 
 Flags:
-- has_image
-- has_video
-- has_3d_model
-- is_open_house
-- is_fsba
+- Not currently stored in the gold facts (available in silver if needed).
 
 Foreign keys connect each record to:
 - property dimension
-- location dimension
 - snapshot date
 
 ---
@@ -179,36 +183,17 @@ The model follows a classic **star schema** design.
 
 | Fact Table Column | Dimension Table | Description |
 |------------------|-----------------|-------------|
-| property_id | dim_property | Property attributes (SCD Type 2) |
-| location_id | dim_location | Geographic context |
-| snapshot_date_id | dim_date | Time of snapshot |
+| property_id | dim_property | Property attributes (latest record per property) |
+| snapshot_date | dim_date | Time of snapshot |
 
 This structure supports efficient filtering, aggregation, and historical analysis.
-![Star Schema](data_model_visualization/Star_schema.png)
+![Star Schema](data_model_material/Star_schema.png)
 
 ---
 
-## 🔄 Slowly Changing Dimensions (SCD)
+## 🔄 Historical Tracking
 
-### Why SCD Type 2?
-
-Property characteristics can change over time:
-- renovations
-- reclassification
-- corrections in listing data
-
-Using SCD Type 2 allows:
-- Full historical accuracy
-- Point-in-time reporting
-- No data overwrites
-
-### Implementation
-
-The `snap_property` snapshot:
-- Tracks changes in property attributes
-- Creates new records on change
-- Maintains `valid_from` / `valid_to` ranges
-- Flags current records
+Historical changes are preserved via the **snapshot-based grain** in silver and the **incremental snapshot fact** in gold. This enables point-in-time reporting without overwriting history.
 
 ---
 
@@ -232,14 +217,12 @@ Data quality is enforced using dbt tests:
 - Snapshot-based point-in-time reporting
 - Property attribute change tracking
 
-
 ---
 
 ## 🚀 Why This Project Matters
 
 This project demonstrates:
 - Real-world dimensional modeling
-- Correct use of SCD Type 2
 - Incremental fact table design
 - Professional dbt project structure
 - Warehouse-agnostic transformation logic
