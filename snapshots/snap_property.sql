@@ -23,10 +23,10 @@ select
     bedrooms,
     bathrooms,
     living_area,
-    lot_area,
+    normalized_lot_area,
     property_type,
     listing_status
 
-from {{ ref('stg_properties') }}
+from {{ ref('stg_zillow_property_master') }}
 
 {% endsnapshot %}

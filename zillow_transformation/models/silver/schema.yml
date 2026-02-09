@@ -1,0 +1,64 @@
+version: 2
+
+models:
+  - name: stg_zillow_property_master
+    description: Silver staging model for raw Zillow property snapshots with standardized types and naming.
+    columns:
+      - name: zillow_property_id
+        description: Zillow unique identifier for the property.
+        tests:
+          - not_null
+      - name: snapshot_date
+        description: Date of the snapshot (normalized to DATE).
+        tests:
+          - not_null
+      - name: etl_run_id
+        description: Identifier for the ETL run that produced the snapshot.
+        tests:
+          - not_null
+      - name: listing_status
+        description: Listing status at snapshot time.
+        tests:
+          - accepted_values:
+              values: ["FOR_SALE", "SOLD", "PENDING", "FOR_RENT", "OFF_MARKET"]
+              quote: true
+      - name: property_type
+        description: Zillow property type.
+        tests:
+          - accepted_values:
+              values:
+                [
+                  "SINGLE_FAMILY",
+                  "CONDO",
+                  "TOWNHOUSE",
+                  "MULTI_FAMILY",
+                  "LOT",
+                  "MOBILE",
+                  "COOP",
+                ]
+              quote: true
+      - name: date_price_changed_at
+        description: Timestamp when the listing price last changed (converted from Unix ms).
+
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - zillow_property_id
+            - snapshot_date
+            - etl_run_id
+
+  - name: int_zillow_property_latest
+    description: Latest snapshot per property based on most recent snapshot_date.
+    columns:
+      - name: zillow_property_id
+        tests:
+          - not_null
+          - unique
+
+  - name: int_zillow_property_history
+    description: Incremental history of all property snapshots from the staging model.
+    columns:
+      - name: property_sk
+        tests:
+          - not_null
+          - unique

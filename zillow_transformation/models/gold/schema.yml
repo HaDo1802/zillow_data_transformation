@@ -1,0 +1,53 @@
+version: 2
+
+models:
+  - name: dim_property
+    description: Type 1 dimension for stable property attributes.
+    columns:
+      - name: property_id
+        tests:
+          - not_null
+          - unique
+      - name: zillow_property_id
+        tests:
+          - not_null
+          - unique
+
+  - name: dim_date
+    description: Calendar dimension generated from available snapshot dates.
+    columns:
+      - name: date_day
+        tests:
+          - not_null
+          - unique
+
+  - name: fact_property_snapshot
+    description: Snapshot fact table at grain property_id per snapshot_date.
+    columns:
+      - name: property_id
+        tests:
+          - not_null
+      - name: snapshot_date
+        tests:
+          - not_null
+      - name: digested_time
+        description: Ingestion timestamp for lineage.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - property_id
+            - snapshot_date
+      - relationships:
+          to: ref('dim_property')
+          field: property_id
+      - relationships:
+          to: ref('dim_date')
+          field: date_day
+
+  - name: fact_property_latest
+    description: Latest snapshot per property.
+    columns:
+      - name: property_id
+        tests:
+          - not_null
+          - unique

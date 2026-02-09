@@ -1,11 +1,11 @@
 # Name your project! Project names should contain only lowercase characters
 # and underscores. A good package name should reflect your organization's
 # name or the intended use of these models
-name: 'zillow_transformation'
-version: '1.0.0'
+name: "zillow_transformation"
+version: "1.0.0"
 
 # This setting configures which "profile" dbt uses for this project.
-profile: 'zillow_transformation'
+profile: "zillow_transformation"
 
 # These configurations specify where dbt should look for different types of files.
 # The `model-paths` config, for example, states that models in this project can be
@@ -17,33 +17,37 @@ seed-paths: ["seeds"]
 macro-paths: ["macros"]
 snapshot-paths: ["snapshots"]
 
-clean-targets:         # directories to be removed by `dbt clean`
+clean-targets: # directories to be removed by `dbt clean`
   - "target"
   - "dbt_packages"
-
 
 # Configuring models
 # Full documentation: https://docs.getdbt.com/docs/configuring-models
 
 models:
   zillow_transformation:
-    staging:
+    silver:
       +materialized: view
-      +schema: staging
-    
-    mart:
+      +on_schema_change: "append_new_columns"
+      +schema: silver
+    gold:
       dim:
         +materialized: table
-        +on_schema_change: 'append_new_columns'
+        +on_schema_change: "append_new_columns"
         +schema: dim
-      
+
       fact:
         +materialized: incremental
-        +on_schema_change: 'append_new_columns'
+        +on_schema_change: "append_new_columns"
         +schema: fact
 
 # Snapshot configuration
-snapshots:
+# snapshots:
+#   zillow_transformation:
+#     +target_schema: real_estate_data
+#     +strategy: check
+
+# Seed configuration
+seeds:
   zillow_transformation:
-    +target_schema: real_estate_data
-    +strategy: check
+    +schema: silver
