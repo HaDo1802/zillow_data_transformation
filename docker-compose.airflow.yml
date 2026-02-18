@@ -1,0 +1,79 @@
+version: "3.9"
+
+x-airflow-common: &airflow-common
+  build:
+    context: ./docker/airflow
+  image: real-estate-airflow:local
+  env_file:
+    - .env
+  environment:
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "True"
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-postgres/airflow
+    AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "False"
+    AIRFLOW_UID: ${AIRFLOW_UID:-50000}
+    REPO_ROOT: /opt/airflow/project
+    DBT_PROJECT_DIR: /opt/airflow/project/zillow_transformation
+    DBT_PROFILES_DIR: /opt/airflow/project/zillow_transformation
+    POSTGRES_HOST: ${POSTGRES_HOST:-host.docker.internal}
+    POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+    POSTGRES_DB: ${POSTGRES_DB:-zillow_api}
+    POSTGRES_USER: ${POSTGRES_USER:-postgres}
+    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    POSTGRES_SCHEMA: ${POSTGRES_SCHEMA:-raw}
+    POSTGRES_TABLE: ${POSTGRES_TABLE:-property_master_data}
+  volumes:
+    - ./airflow/dags:/opt/airflow/dags
+    - ./logs:/opt/airflow/logs
+    - ./zillow_transformation:/opt/airflow/project/zillow_transformation
+    - ./scripts:/opt/airflow/project/scripts
+    - ./.env:/opt/airflow/project/.env:ro
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+  user: "${AIRFLOW_UID:-50000}:0"
+  depends_on:
+    airflow-postgres:
+      condition: service_healthy
+
+services:
+  airflow-postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - airflow_postgres_data:/var/lib/postgresql/data
+
+  airflow-init:
+    <<: *airflow-common
+    command: >
+      bash -c "airflow db migrate && airflow users create
+      --role Admin
+      --username $${AIRFLOW_WWW_USER_USERNAME:-admin}
+      --password $${AIRFLOW_WWW_USER_PASSWORD:-admin}
+      --firstname Airflow
+      --lastname Admin
+      --email admin@example.com"
+    restart: "no"
+
+  airflow-webserver:
+    <<: *airflow-common
+    command: webserver
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    restart: unless-stopped
+
+volumes:
+  airflow_postgres_data:
