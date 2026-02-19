@@ -38,7 +38,7 @@ Airflow UI:
 ```bash
 docker compose -f docker-compose.airflow.yml exec airflow-scheduler \
   airflow dags trigger real_estate_transformation \
-  --conf '{"s3_file_key":"raw/raw_20260207_20260207_2306.csv"}'
+  --conf '{"storage_file_path":"raw/raw_20260207_20260207_2306.csv"}'
 ```
 
 ## Logs
@@ -52,7 +52,7 @@ docker compose -f docker-compose.airflow.yml logs -f airflow-webserver
 docker compose -f docker-compose.airflow.yml down
 ```
 
-## Notes for your current Mac/local DB setup
+## Notes for your Supabase DB setup
 - In Docker, `localhost` is the container itself.
-- The compose file defaults `POSTGRES_HOST=host.docker.internal` so containers can reach your host PostgreSQL.
-- If your Postgres is remote/cloud, set `POSTGRES_HOST` in `.env` to that endpoint instead.
+- For Supabase, use `.env` values for `SUPABASE_DB_HOST`, `SUPABASE_DB_PORT`, `SUPABASE_DB_NAME`, `SUPABASE_DB_USER`, `SUPABASE_DB_PASSWORD`, and `SUPABASE_DB_SSLMODE=require`.
+- Keep `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and `SUPABASE_STORAGE_BUCKET` set so Airflow can download CSV files from Supabase Storage.

@@ -3,10 +3,11 @@ zillow_transformation:
   outputs:
     dev:
       type: postgres
-      host: "{{ env_var('POSTGRES_HOST', 'host.docker.internal') }}"
-      user: "{{ env_var('POSTGRES_USER', 'postgres') }}"
-      password: "{{ env_var('POSTGRES_PASSWORD', 'postgres') }}"
-      port: "{{ env_var('POSTGRES_PORT', '5432') | int }}"
-      dbname: "{{ env_var('POSTGRES_DB', 'zillow_api') }}"
-      schema: public
+      host: "{{ env_var('SUPABASE_DB_HOST', env_var('POSTGRES_HOST', 'host.docker.internal')) }}"
+      user: "{{ env_var('SUPABASE_DB_USER', env_var('POSTGRES_USER', 'postgres')) }}"
+      password: "{{ env_var('SUPABASE_DB_PASSWORD', env_var('POSTGRES_PASSWORD', 'postgres')) }}"
+      port: "{{ env_var('SUPABASE_DB_PORT', env_var('POSTGRES_PORT', '5432')) | int }}"
+      dbname: "{{ env_var('SUPABASE_DB_NAME', env_var('POSTGRES_DB', 'postgres')) }}"
+      schema: "{{ env_var('SUPABASE_SCHEMA', 'public') }}"
+      sslmode: "{{ env_var('SUPABASE_DB_SSLMODE', 'require') }}"
       threads: 4

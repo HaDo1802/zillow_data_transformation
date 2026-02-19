@@ -23,24 +23,27 @@ DBT_PROFILES_DIR = Path(
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
-from load_s3_to_postgres import load_csv_from_s3_to_postgres  # noqa: E402
+from load_supabase_to_supabase import load_csv_from_supabase_storage_to_table  # noqa: E402
 
 
-def _load_raw_from_s3(**context: dict) -> None:
+def _load_raw_from_supabase_storage(**context: dict) -> None:
     dag_run = context.get("dag_run")
     dag_conf = dag_run.conf if dag_run and dag_run.conf else {}
 
-    s3_file_key = dag_conf.get("s3_file_key") or os.getenv("S3_FILE_KEY")
-    if not s3_file_key:
+    storage_file_path = (
+        dag_conf.get("storage_file_path")
+        or os.getenv("SUPABASE_FILE_PATH")
+    )
+    if not storage_file_path:
         raise ValueError(
-            "Missing S3 key. Set dag_run.conf['s3_file_key'] or S3_FILE_KEY env var."
+            "Missing storage file path. Set dag_run.conf['storage_file_path'] or SUPABASE_FILE_PATH env var."
         )
 
-    load_csv_from_s3_to_postgres(
-        s3_file_key=s3_file_key,
-        s3_bucket=os.getenv("S3_BUCKET"),
-        table_name=os.getenv("POSTGRES_TABLE", "property_master_data"),
-        schema=os.getenv("POSTGRES_SCHEMA", "raw"),
+    load_csv_from_supabase_storage_to_table(
+        storage_file_path=storage_file_path,
+        storage_bucket=os.getenv("SUPABASE_STORAGE_BUCKET"),
+        table_name=os.getenv("SUPABASE_RAW_TABLE", "property_master_data"),
+        schema=os.getenv("SUPABASE_SCHEMA", "public"),
     )
 
 
@@ -55,17 +58,17 @@ DEFAULT_ARGS = {
 
 with DAG(
     dag_id="real_estate_transformation",
-    description="Load Zillow snapshots from S3 and run dbt transformations/tests",
+    description="Load Zillow snapshots from Supabase Storage and run dbt transformations/tests",
     default_args=DEFAULT_ARGS,
     start_date=datetime(2026, 2, 1),
     schedule=None,
     catchup=False,
     max_active_runs=1,
-    tags=["real-estate", "dbt", "postgres", "s3"],
+    tags=["real-estate", "dbt", "postgres", "supabase"],
 ) as dag:
     load_raw_data = PythonOperator(
-        task_id="load_raw_s3_to_postgres",
-        python_callable=_load_raw_from_s3,
+        task_id="load_raw_supabase_storage_to_table",
+        python_callable=_load_raw_from_supabase_storage,
     )
 
     dbt_deps = BashOperator(

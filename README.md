@@ -39,7 +39,7 @@ real_estate_transformation/
 
 ## ⚙️ Technology Stack
 
-- **Data Source**: Historical Zillow property listings, ingested via API and stored in AWS S3
+- **Data Source**: Historical Zillow property listings, ingested via API and stored in Supabase Storage
 - **Programming Language**: SQL + Jinja (dbt)
 - **Data Warehouse**: PostgreSQL
 - **Transformation Tool**: dbt Core (v1.10+)

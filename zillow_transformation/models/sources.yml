@@ -2,14 +2,14 @@ version: 2
 
 sources:
   - name: raw
-    description: Raw Zillow property snapshot data loaded from S3 (raw landing layer)
+    description: Raw Zillow property snapshot data loaded from Supabase Storage (raw landing layer)
     schema: raw
     tables:
       - name: property_master_data
         description: Raw CSV snapshots of Zillow property listings
         loaded_at_field: ingested_at
   - name: bronze
-    description: Raw Zillow property snapshot data loaded from S3 (bronze layer)
+    description: Raw Zillow property snapshot data loaded from Supabase Storage (bronze layer)
     schema: bronze
     tables:
       - name: properties_data_history_raw

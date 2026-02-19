@@ -251,3 +251,6 @@ You now have a Docker-based Airflow stack in this repo.
 - Environment drift is reduced (all deps are inside image).
 - You avoid local Python/dbt/Airflow conflicts.
 - You can later move the same compose/image approach to a stronger host.
+
+## Redshift debug
+- 
