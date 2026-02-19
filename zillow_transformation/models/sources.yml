@@ -5,27 +5,6 @@ sources:
     description: Raw Zillow property snapshot data loaded from Supabase Storage (raw landing layer)
     schema: raw
     tables:
-      - name: property_master_data
+      - name: raw_property_master_data
         description: Raw CSV snapshots of Zillow property listings
-        loaded_at_field: ingested_at
-  - name: bronze
-    description: Raw Zillow property snapshot data loaded from Supabase Storage (bronze layer)
-    schema: bronze
-    tables:
-      - name: properties_data_history_raw
-        description: Raw CSV snapshots of Zillow property listings
-        loaded_at_field: loaded_at
-  - name: real_estate_data
-    description: Raw Zillow property snapshot data ingested daily
-    schema: real_estate_data
-    tables:
-      - name: properties_data_history
-        description: Historical snapshots of Zillow property listings
-        freshness:
-          warn_after:
-            count: 2
-            period: day
-          error_after:
-            count: 4
-            period: day
-        loaded_at_field: loaded_at
+        loaded_at_field: ingested_time

@@ -12,8 +12,8 @@ models:
         description: Date of the snapshot (normalized to DATE).
         tests:
           - not_null
-      - name: etl_run_id
-        description: Identifier for the ETL run that produced the snapshot.
+      - name: source_file_key
+        description: Source file path used to ingest the snapshot.
         tests:
           - not_null
       - name: listing_status
@@ -35,6 +35,8 @@ models:
                   "LOT",
                   "MOBILE",
                   "COOP",
+                  "APARTMENT",
+                  "OTHER",
                 ]
               quote: true
       - name: date_price_changed_at
@@ -45,7 +47,7 @@ models:
           combination_of_columns:
             - zillow_property_id
             - snapshot_date
-            - etl_run_id
+            - extracted_at
 
   - name: int_zillow_property_latest
     description: Latest snapshot per property based on most recent snapshot_date.

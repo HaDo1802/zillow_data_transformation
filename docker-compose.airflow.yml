@@ -16,13 +16,14 @@ x-airflow-common: &airflow-common
     REPO_ROOT: /opt/airflow/project
     DBT_PROJECT_DIR: /opt/airflow/project/zillow_transformation
     DBT_PROFILES_DIR: /opt/airflow/project/zillow_transformation
-    POSTGRES_HOST: ${POSTGRES_HOST:-host.docker.internal}
-    POSTGRES_PORT: ${POSTGRES_PORT:-5432}
-    POSTGRES_DB: ${POSTGRES_DB:-zillow_api}
-    POSTGRES_USER: ${POSTGRES_USER:-postgres}
-    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-    POSTGRES_SCHEMA: ${POSTGRES_SCHEMA:-raw}
-    POSTGRES_TABLE: ${POSTGRES_TABLE:-property_master_data}
+    SUPABASE_DB_HOST: ${SUPABASE_DB_HOST}
+    SUPABASE_DB_PORT: ${SUPABASE_DB_PORT:-5432}
+    SUPABASE_DB_NAME: ${SUPABASE_DB_NAME:-postgres}
+    SUPABASE_DB_USER: ${SUPABASE_DB_USER:-postgres}
+    SUPABASE_DB_PASSWORD: ${SUPABASE_DB_PASSWORD}
+    SUPABASE_DB_SSLMODE: ${SUPABASE_DB_SSLMODE:-require}
+    SUPABASE_SCHEMA: ${SUPABASE_SCHEMA:-raw}
+    SUPABASE_RAW_TABLE: ${SUPABASE_RAW_TABLE:-raw_property_master_data}
   volumes:
     - ./airflow/dags:/opt/airflow/dags
     - ./logs:/opt/airflow/logs

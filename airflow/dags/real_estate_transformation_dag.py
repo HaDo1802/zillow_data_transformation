@@ -23,7 +23,7 @@ DBT_PROFILES_DIR = Path(
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
-from load_supabase_to_supabase import load_csv_from_supabase_storage_to_table  # noqa: E402
+from load_file_to_database import load_csv_from_supabase_storage_to_table  # noqa: E402
 
 
 def _load_raw_from_supabase_storage(**context: dict) -> None:
@@ -42,8 +42,8 @@ def _load_raw_from_supabase_storage(**context: dict) -> None:
     load_csv_from_supabase_storage_to_table(
         storage_file_path=storage_file_path,
         storage_bucket=os.getenv("SUPABASE_STORAGE_BUCKET"),
-        table_name=os.getenv("SUPABASE_RAW_TABLE", "property_master_data"),
-        schema=os.getenv("SUPABASE_SCHEMA", "public"),
+        table_name=os.getenv("SUPABASE_RAW_TABLE", "raw_property_master_data"),
+        schema=os.getenv("SUPABASE_SCHEMA", "raw"),
     )
 
 

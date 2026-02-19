@@ -1,4 +1,4 @@
-{%- set src = source('raw', 'property_master_data') -%}
+{%- set src = source('raw', 'raw_property_master_data') -%}
 {%- set cols = adapter.get_columns_in_relation(src) -%}
 {%- set colnames = cols | map(attribute='name') | list -%}
 
@@ -49,7 +49,16 @@ base as (
         (regexp_replace("daysOnZillow"::text, ',', '', 'g'))::int as days_on_zillow,
 
         -- categorical fields
-        (trim("propertyType"::text)) as property_type,
+        (
+            case
+                when "propertyType" is null then null
+                when upper(replace(trim("propertyType"::text), '-', '_')) in ('SINGLE_FAMILY', 'SINGLEFAMILY') then 'SINGLE_FAMILY'
+                when upper(replace(trim("propertyType"::text), '-', '_')) in ('MULTI_FAMILY', 'MULTIFAMILY') then 'MULTI_FAMILY'
+                when upper(replace(trim("propertyType"::text), '-', '_')) in ('MOBILE', 'MANUFACTURED') then 'MOBILE'
+                when upper(replace(trim("propertyType"::text), '-', '_')) in ('CONDO', 'TOWNHOUSE', 'LOT', 'COOP', 'APARTMENT') then upper(replace(trim("propertyType"::text), '-', '_'))
+                else 'OTHER'
+            end
+        ) as property_type,
         (trim("listingStatus"::text)) as listing_status,
         nullif(trim("lotAreaUnit"::text), '') as raw_lot_area_unit,
         -- location fields (raw inputs)

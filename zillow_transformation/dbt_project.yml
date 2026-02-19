@@ -31,12 +31,12 @@ models:
       +on_schema_change: "append_new_columns"
       +schema: silver
     gold:
-      dim:
+      dimensions:
         +materialized: table
         +on_schema_change: "append_new_columns"
         +schema: dim
 
-      fact:
+      facts:
         +materialized: incremental
         +on_schema_change: "append_new_columns"
         +schema: fact
