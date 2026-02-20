@@ -1,39 +1,34 @@
 import os
+from io import BytesIO, StringIO
 from datetime import datetime, timezone
-from io import BytesIO
+
 import pandas as pd
 import psycopg2
 from dotenv import load_dotenv
-from psycopg2 import sql
-from psycopg2.extras import execute_values
-from sqlalchemy import create_engine, text
-from sqlalchemy.engine import URL
 from supabase import create_client
 
 load_dotenv()
 
+SCHEMA = "raw"
+STG_TABLE = "raw_property_master_data_stg"
+TGT_TABLE = "raw_property_master_data"
 
-def _create_engine():
-    host = os.getenv("SUPABASE_DB_HOST")
-    port = os.getenv("SUPABASE_DB_PORT", "5432")
-    dbname = os.getenv("SUPABASE_DB_NAME", "postgres")
-    user = os.getenv("SUPABASE_DB_USER")
-    password = os.getenv("SUPABASE_DB_PASSWORD")
-    sslmode = os.getenv("SUPABASE_DB_SSLMODE", "require")
+BIGINT_MIN = -9223372036854775808
+BIGINT_MAX =  9223372036854775807
 
-    db_url = URL.create(
-        "postgresql+psycopg2",
-        username=user,
-        password=password,
-        host=host,
-        port=int(port),
-        database=dbname,
-    )
-
-    return create_engine(db_url, connect_args={"sslmode": sslmode})
+EXPECTED_COLS = [
+    "address","bathrooms","bedrooms","brokername","carouselphotos",
+    "comingsoononmarketdate","contingentlistingtype","country","currency",
+    "datepricechanged","daysonzillow","detailurl","has3dmodel","hasimage",
+    "hasvideo","imgsrc","latitude","listingstatus","listingsubtype",
+    "livingarea","longitude","lotareaunit","lotareavalue","price",
+    "pricechange","propertytype","rentzestimate","variabledata","zestimate",
+    "zpid","unit","newconstructiontype","extracted_at",
+    "ingested_time","snapshot_date","source_file"
+]
 
 
-def _create_connection():
+def get_conn():
     return psycopg2.connect(
         host=os.getenv("SUPABASE_DB_HOST"),
         database=os.getenv("SUPABASE_DB_NAME", "postgres"),
@@ -44,133 +39,185 @@ def _create_connection():
     )
 
 
-def _ensure_schema(engine, schema: str):
-    with engine.begin() as conn:
-        conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{schema}"'))
-
-
-def _ensure_unique_index(conn, table_name: str, schema: str | None, columns: list[str]):
-    if not columns:
-        raise ValueError("Unique index columns are required")
-
-    index_name = f"{table_name}_{'_'.join(columns)}_uniq"
-    table_ident = (
-        sql.Identifier(schema, table_name) if schema else sql.Identifier(table_name)
-    )
-    index_ident = sql.Identifier(index_name)
-    column_idents = [sql.Identifier(c) for c in columns]
-
-    with conn.cursor() as cur:
-        cur.execute(
-            sql.SQL(
-                "CREATE UNIQUE INDEX IF NOT EXISTS {index} ON {table} ({cols})"
-            ).format(
-                index=index_ident,
-                table=table_ident,
-                cols=sql.SQL(", ").join(column_idents),
-            )
-        )
-    conn.commit()
-
-
-def load_csv_from_supabase_storage_to_table(
-    storage_file_path: str | None = None,
-    storage_bucket: str | None = None,
-    table_name: str | None = None,
-    schema: str | None = None,
-) -> int:
-    """Download a CSV from Supabase Storage and idempotently load it into Supabase Postgres."""
-    storage_file_path = storage_file_path
-    storage_bucket = storage_bucket or os.getenv("SUPABASE_STORAGE_BUCKET")
-    table_name = table_name or os.getenv("SUPABASE_RAW_TABLE")
-    schema = schema or os.getenv("SUPABASE_SCHEMA")
-
-    if not storage_file_path:
-        raise ValueError(
-            "Missing file path: set storage_file_path or SUPABASE_FILE_PATH"
-        )
-    if not storage_bucket:
-        raise ValueError(
-            "Missing bucket: set storage_bucket or SUPABASE_STORAGE_BUCKET"
-        )
-    if not table_name:
-        raise ValueError("Missing target table: set table_name or SUPABASE_RAW_TABLE")
-
-    supabase = create_client(
-        os.getenv("SUPABASE_URL"),
-        os.getenv("SUPABASE_SERVICE_ROLE_KEY"),
-    )
-
-    print(f"Downloading '{storage_file_path}' from bucket '{storage_bucket}'...")
-    content = supabase.storage.from_(storage_bucket).download(storage_file_path)
+def download_csv_from_storage(bucket: str, path: str) -> pd.DataFrame:
+    supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_SERVICE_ROLE_KEY"))
+    print(f"Downloading '{path}' from bucket '{bucket}'...")
+    content = supabase.storage.from_(bucket).download(path)
     if not content:
-        raise ValueError(
-            f"Could not download '{storage_file_path}' from '{storage_bucket}'"
-        )
+        raise ValueError(f"Could not download '{path}' from '{bucket}'")
+    return pd.read_csv(BytesIO(content))
 
-    df = pd.read_csv(BytesIO(content))
-    print(f"Read {len(df)} rows and {len(df.columns)} columns")
 
+def to_bool_sql(expr: str) -> str:
+    return f"""
+    CASE
+      WHEN lower({expr}) IN ('true','t','1','yes','y') THEN TRUE
+      WHEN lower({expr}) IN ('false','f','0','no','n') THEN FALSE
+      ELSE NULL
+    END
+    """
+
+
+def safe_int_sql(expr: str) -> str:
+    return f"""
+    CASE
+      WHEN {expr} ~ '^-?\\d+$' THEN ({expr})::INTEGER
+      ELSE NULL
+    END
+    """
+
+
+def safe_numeric_sql(expr: str) -> str:
+    return f"""
+    CASE
+      WHEN {expr} ~ '^-?\\d+(\\.\\d+)?$' THEN ({expr})::NUMERIC
+      ELSE NULL
+    END
+    """
+
+
+def safe_float_sql(expr: str) -> str:
+    return f"""
+    CASE
+      WHEN {expr} ~ '^-?\\d+(\\.\\d+)?$' THEN ({expr})::DOUBLE PRECISION
+      ELSE NULL
+    END
+    """
+
+
+def safe_bigint_sql(expr: str) -> str:
+    # Only cast if integer string AND within bigint range
+    return f"""
+    CASE
+      WHEN {expr} ~ '^-?\\d+$'
+       AND ({expr})::NUMERIC BETWEEN {BIGINT_MIN} AND {BIGINT_MAX}
+      THEN ({expr})::BIGINT
+      ELSE NULL
+    END
+    """
+
+
+def load_to_staging(conn, df: pd.DataFrame):
+    # Normalize headers to match Postgres behavior
+    df.columns = df.columns.str.strip().str.lower()
+
+    # Add metadata
     now_utc = datetime.now(timezone.utc)
-    df["ingested_time"] = now_utc
+    df["ingested_time"] = now_utc.isoformat()
     df["snapshot_date"] = now_utc.strftime("%Y%m%d")
-    df["source_file"] = storage_file_path
+    # source_file will be set by caller
 
-    unique_cols = ["zpid", "extracted_at", "price"]
-    missing = [col for col in unique_cols if col not in df.columns]
-    if missing:
-        raise ValueError(f"Unique key columns not found in CSV: {missing}")
+    # Keep only expected columns (missing -> NULL, extra -> dropped)
+    for c in EXPECTED_COLS:
+        if c not in df.columns:
+            df[c] = None
+    df = df[EXPECTED_COLS]
 
-    engine = _create_engine()
-    conn = _create_connection()
+    # Convert everything to string for TEXT staging (None stays empty in CSV, we handle with NULLIF later)
+    df2 = df.copy()
+    for c in df2.columns:
+        df2[c] = df2[c].astype("string")
 
-    _ensure_schema(engine, schema)
-    df.head(0).to_sql(
-        table_name,
-        engine,
-        schema=schema,
-        if_exists="append",
-        index=False,
-    )
-    _ensure_unique_index(conn, table_name, schema, unique_cols)
+    buf = StringIO()
+    df2.to_csv(buf, index=False, header=True)
+    buf.seek(0)
 
-    qualified_table = f"{schema}.{table_name}"
-    print(f"Idempotent loading into '{qualified_table}'...")
-
-    table_ident = (
-        sql.Identifier(schema, table_name) if schema else sql.Identifier(table_name)
-    )
-    col_idents = [sql.Identifier(col) for col in df.columns]
-    conflict_cols = [sql.Identifier(col) for col in unique_cols]
-    insert_stmt = sql.SQL(
-        "INSERT INTO {table} ({cols}) VALUES %s ON CONFLICT ({conflict_cols}) DO NOTHING"
-    ).format(
-        table=table_ident,
-        cols=sql.SQL(", ").join(col_idents),
-        conflict_cols=sql.SQL(", ").join(conflict_cols),
-    )
-
-    rows = list(df.itertuples(index=False, name=None))
-    batch_size = 1000
-    inserted = 0
     with conn.cursor() as cur:
-        for start in range(0, len(rows), batch_size):
-            batch = rows[start : start + batch_size]
-            execute_values(cur, insert_stmt, batch, page_size=len(batch))
-            inserted += cur.rowcount
+        cur.execute(f"TRUNCATE TABLE {SCHEMA}.{STG_TABLE};")
+        copy_sql = f"""
+            COPY {SCHEMA}.{STG_TABLE} ({", ".join(EXPECTED_COLS)})
+            FROM STDIN WITH (FORMAT CSV, HEADER TRUE);
+        """
+        cur.copy_expert(copy_sql, buf)
+
     conn.commit()
 
-    skipped = len(df) - inserted
-    print(f"Done: inserted {inserted} rows into '{qualified_table}'")
-    if skipped > 0:
-        print(f"Skipped {skipped} duplicate rows")
 
-    conn.close()
-    engine.dispose()
+def stage_to_target(conn) -> int:
+    s = lambda c: f"s.{c}"
+
+    insert_sql = f"""
+    INSERT INTO {SCHEMA}.{TGT_TABLE} (
+      address, bathrooms, bedrooms, brokername, carouselphotos,
+      comingsoononmarketdate, contingentlistingtype, country, currency,
+      datepricechanged, daysonzillow, detailurl, has3dmodel, hasimage, hasvideo,
+      imgsrc, latitude, listingstatus, listingsubtype, livingarea, longitude,
+      lotareaunit, lotareavalue, price, pricechange, propertytype,
+      rentzestimate, variabledata, zestimate, zpid, unit, newconstructiontype,
+      extracted_at, ingested_time, snapshot_date, source_file
+    )
+    SELECT
+      NULLIF({s('address')}, ''),
+      ({safe_numeric_sql(s('bathrooms'))})::NUMERIC(4,1),
+      {safe_int_sql(s('bedrooms'))},
+      NULLIF({s('brokername')}, ''),
+      NULLIF({s('carouselphotos')}, ''),
+      NULLIF({s('comingsoononmarketdate')}, ''),
+      NULLIF({s('contingentlistingtype')}, ''),
+      NULLIF({s('country')}, ''),
+      NULLIF({s('currency')}, ''),
+      NULLIF({s('datepricechanged')}, ''),
+      {safe_int_sql(s('daysonzillow'))},
+      NULLIF({s('detailurl')}, ''),
+      {to_bool_sql(s('has3dmodel'))},
+      {to_bool_sql(s('hasimage'))},
+      {to_bool_sql(s('hasvideo'))},
+      NULLIF({s('imgsrc')}, ''),
+      {safe_float_sql(s('latitude'))},
+      NULLIF({s('listingstatus')}, ''),
+      NULLIF({s('listingsubtype')}, ''),
+      {safe_int_sql(s('livingarea'))},
+      {safe_float_sql(s('longitude'))},
+      NULLIF({s('lotareaunit')}, ''),
+      {safe_float_sql(s('lotareavalue'))},
+      {safe_bigint_sql(s('price'))},
+      {safe_bigint_sql(s('pricechange'))},
+      NULLIF({s('propertytype')}, ''),
+      {safe_bigint_sql(s('rentzestimate'))},
+      NULLIF({s('variabledata')}, ''),
+      {safe_bigint_sql(s('zestimate'))},
+      {safe_bigint_sql(s('zpid'))},
+      NULLIF({s('unit')}, ''),
+      NULLIF({s('newconstructiontype')}, ''),
+      NULLIF({s('extracted_at')}, '')::timestamptz,
+      NULLIF({s('ingested_time')}, '')::timestamptz,
+      NULLIF({s('snapshot_date')}, ''),
+      NULLIF({s('source_file')}, '')
+    FROM {SCHEMA}.{STG_TABLE} s
+    WHERE NULLIF({s('zpid')}, '') IS NOT NULL
+      AND NULLIF({s('extracted_at')}, '') IS NOT NULL
+    ON CONFLICT (zpid, extracted_at, price) DO NOTHING;
+    """
+
+    with conn.cursor() as cur:
+        cur.execute(insert_sql)
+        inserted = cur.rowcount
+
+    conn.commit()
     return inserted
 
 
+def main():
+    bucket = os.getenv("SUPABASE_STORAGE_BUCKET")
+    if not bucket:
+        raise ValueError("Missing SUPABASE_STORAGE_BUCKET in .env")
+
+    storage_file_path = "raw/raw_20260209_20260209_0631.csv"  # <-- change if needed
+
+    df = download_csv_from_storage(bucket, storage_file_path)
+    print(f"Read {len(df)} rows and {len(df.columns)} columns")
+
+    # add source_file now (used in staging)
+    df["source_file"] = storage_file_path
+
+    conn = get_conn()
+    try:
+        load_to_staging(conn, df)
+        inserted = stage_to_target(conn)
+        print(f"✅ Done. Inserted {inserted} new rows into {SCHEMA}.{TGT_TABLE}")
+    finally:
+        conn.close()
+
+
 if __name__ == "__main__":
-    load_csv_from_supabase_storage_to_table(
-        storage_file_path="raw/raw_20260219_20260219_0644.csv"
-    )
+    main()

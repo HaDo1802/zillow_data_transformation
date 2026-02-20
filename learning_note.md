@@ -254,3 +254,147 @@ You now have a Docker-based Airflow stack in this repo.
 
 ## Redshift debug
 - 
+
+## 14) Debug Note: `psycopg2.errors.NumericValueOutOfRange: bigint out of range`
+
+This happened during your one-time bulk load from Supabase Storage CSV files into table `raw.raw_property_master_data`.
+
+### What this error means in simple words
+Postgres has fixed numeric limits for each integer type.
+
+- `smallint`: -32,768 to 32,767
+- `integer`: -2,147,483,648 to 2,147,483,647
+- `bigint`: -9,223,372,036,854,775,808 to 9,223,372,036,854,775,807
+
+If a CSV value is bigger than what the target column allows, Postgres rejects the insert and throws:
+
+`NumericValueOutOfRange: bigint out of range`
+
+### Why you saw it only on file `[3/13]`
+Your loader was processing files in sequence.
+
+1. File 1 and 2 had valid numeric values for mapped integer columns.
+2. File 3 (`raw/raw_20260210_20260210_0632.csv`) contained at least one value that overflowed a numeric column in the target table.
+3. The insert batch failed at `execute_values(...)`, so the script stopped.
+
+So the script logic was fine, but one or more source values did not fit the destination numeric type.
+
+### Realistic examples
+
+Example A: large identifier accidentally treated as bigint
+
+- CSV value: `100000000000000000000` (20 digits)
+- Target column type: `bigint`
+- Result: fail, because this exceeds bigint max (`9223372036854775807`)
+
+Example B: exponential notation from CSV parsing
+
+- CSV value: `9.999999999999999e+25`
+- Target column type: `bigint`
+- Result: fail, way outside bigint range
+
+Example C: mixed dirty data in one column
+
+- Most rows: normal integers
+- Some rows: very large numbers, bad strings, non-integer forms
+- Insert works for many rows, then crashes when one bad row is in a batch
+
+### Why this is common in CSV pipelines
+CSV has no strict schema by itself.
+
+1. Producer side may export numbers without strict typing.
+2. Pandas may infer types differently between files.
+3. Destination table has strict Postgres types.
+4. Any row violating target type causes batch insert failure.
+
+### What we changed in `scripts/load_file_to_database.py`
+We added two layers of protection.
+
+#### Layer 1: pre-sanitize integer columns using table metadata
+Before insert, the script queries `information_schema.columns` for integer-like columns in the target table and sanitizes values.
+
+- Non-integer or out-of-range values are converted to `NULL`
+- Valid values remain
+
+Functions involved:
+
+- `_get_integer_column_types(...)`
+- `_sanitize_integer_columns_for_postgres(...)`
+
+#### Layer 2: runtime fallback if a batch still fails
+Even after pre-sanitize, if a batch still hits `NumericValueOutOfRange`, we now:
+
+1. rollback only that failed batch
+2. retry rows one-by-one
+3. for failing rows, apply focused repair (`_coerce_value_for_bigint_overflow(...)`)
+4. retry insert for repaired row
+5. if still failing, skip row and continue
+
+This prevents one bad row from killing the full 13-file one-time load.
+
+### Why the first fix did not fully solve it
+Your first run still failed because overflow can appear in shapes that are not fully caught by simple column-level coercion alone. Batch insert can still encounter edge cases.
+
+The row-level fallback is the robust safety net for one-time ingestion.
+
+### Data quality tradeoff
+Converting out-of-range values to `NULL` means:
+
+- Pro: pipeline continues, you do not lose entire file
+- Pro: one-time historical load can complete
+- Con: specific invalid numeric values are not preserved as numbers
+- Con: if column is business-critical, you should later investigate those rows
+
+For one-time backfill, this is usually the right pragmatic choice.
+
+### How to run now
+
+```bash
+python scripts/load_file_to_database.py --all --prefix raw
+```
+
+Expected log patterns:
+
+- `Batch ... hit bigint overflow; retrying row-by-row with repair.`
+- `Repaired X row(s) with bigint overflow values`
+- `Skipped Y bad row(s) that still failed after repair` (only if unrecoverable)
+- final bulk summary with total inserted rows
+
+### What to check after run
+
+1. Check row counts in target table.
+2. Check logs for repaired/skipped row counts.
+3. Spot-check suspicious numeric columns for `NULL` spikes after the load.
+
+Example SQL checks:
+
+```sql
+SELECT COUNT(*) AS total_rows
+FROM raw.raw_property_master_data;
+```
+
+```sql
+SELECT
+  COUNT(*) AS null_price_rows
+FROM raw.raw_property_master_data
+WHERE price IS NULL;
+```
+
+```sql
+SELECT
+  source_file,
+  COUNT(*) AS rows_loaded
+FROM raw.raw_property_master_data
+GROUP BY source_file
+ORDER BY rows_loaded DESC;
+```
+
+### Long-term clean solution
+For production-grade recurring loads, better options are:
+
+1. enforce strict schema earlier before writing CSV
+2. stage into all-text/raw landing table first
+3. cast/validate in SQL transform layer with explicit rules
+4. quarantine invalid rows into a separate error table for audit
+
+For your current goal, one-time bulk load from existing files, the implemented fix is appropriate and safe enough to complete the ingestion.
