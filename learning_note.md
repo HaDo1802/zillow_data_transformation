@@ -398,3 +398,115 @@ For production-grade recurring loads, better options are:
 4. quarantine invalid rows into a separate error table for audit
 
 For your current goal, one-time bulk load from existing files, the implemented fix is appropriate and safe enough to complete the ingestion.
+
+## 15) Backfill + dbt Grain Fix (Detailed)
+
+This section documents what changed after migrating many old files from S3 to Supabase and loading them in one shot.
+
+### Problem observed
+`dbt test` failures:
+- `unique_int_zillow_property_history_property_sk`
+- `dbt_utils_unique_combination_of_columns_fact_property_snapshot_property_id__snapshot_date`
+
+Root cause:
+1. One-time backfill loaded many files on the same current date.
+2. Raw `snapshot_date` can reflect load date instead of true event date.
+3. Multiple records existed for the same `property_id + snapshot_date`.
+4. Existing keys/grain expected fewer duplicates than what backfill created.
+
+### Why this happens in simple terms
+Think of one property scraped many times:
+- 2026-02-09 06:31
+- 2026-02-09 08:10
+- 2026-02-09 21:45
+
+If model key uses only `(property_id, snapshot_date)`, all three are treated like one slot and collide.
+
+### What we changed in dbt
+
+#### A) Silver: use true event date
+File:
+- `zillow_transformation/models/silver/staging/stg_zillow_property_master.sql`
+
+Change:
+- `snapshot_date` now prefers `extracted_at::date` first.
+- Fallback still uses raw `snapshot_date` when needed.
+
+Why:
+- `extracted_at` is the true timestamp of when data was captured.
+- Backfill load date should not redefine business event date.
+
+#### B) Silver: make event key unique enough
+File:
+- `zillow_transformation/models/silver/staging/stg_zillow_property_master.sql`
+
+Change:
+- `property_sk` now uses:
+  - `zillow_property_id`
+  - `snapshot_date`
+  - `extracted_at`
+
+Why:
+- Multiple captures on same day must remain uniquely represented in silver history.
+
+#### C) Gold snapshot fact: keep one row per property/day
+File:
+- `zillow_transformation/models/gold/facts/fact_property_snapshot.sql`
+
+Change:
+- Added `row_number()` partitioned by `(property_id, snapshot_date)`
+- Ordered by latest `extracted_at`, then latest `digested_time`
+- Kept only `row_num = 1`
+
+Why:
+- Gold snapshot fact test expects one row per property per day.
+- For intraday duplicates, keep latest daily state.
+
+### Grain definitions after fix
+
+#### Silver (`int_zillow_property_history`)
+- Grain: one row per property event (can have multiple rows per day).
+- Key: `property_sk` based on property + day + extracted timestamp.
+
+#### Gold snapshot (`fact_property_snapshot`)
+- Grain: one row per property per snapshot date.
+- If multiple events exist in same day, latest event wins.
+
+#### Gold latest (`fact_property_latest`)
+- Grain: one row per property (latest overall).
+
+### Row count expectations
+Do not expect same row counts.
+
+Usually:
+- `fact_property_snapshot` >= `fact_property_latest`
+
+Equal only when each property appears on exactly one snapshot date.
+
+### Example
+Property `123` appears:
+- 2026-02-09 06:31, price 500k
+- 2026-02-09 18:00, price 495k
+- 2026-02-10 07:00, price 490k
+
+Result:
+- Silver history: 3 rows (all events kept)
+- Gold snapshot: 2 rows (2026-02-09 keeps latest event, and 2026-02-10)
+- Gold latest: 1 row (2026-02-10)
+
+### Commands to rebuild safely after this change
+Use full refresh because incremental tables may already hold old-grain data.
+
+```bash
+dbt run --full-refresh --project-dir zillow_transformation --profiles-dir zillow_transformation
+dbt test --project-dir zillow_transformation --profiles-dir zillow_transformation
+```
+
+### Daily production behavior going forward
+This design is stable for regular ETL runs:
+1. New daily snapshots append in raw.
+2. Silver preserves event history.
+3. Gold snapshot keeps one row/property/day (latest daily state).
+4. Gold latest stays one row/property.
+
+If you later need intraday analytics in gold, change snapshot fact grain to include `extracted_at` and update related uniqueness tests accordingly.

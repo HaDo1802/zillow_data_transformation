@@ -1,0 +1,97 @@
+name: Real Estate Transformation Pipeline CI/CD
+
+on:
+  schedule:
+    - cron: "0 7 * * *" # Daily at 7 AM UTC (1 hour after extract at 6 AM UTC)
+  push:
+    branches:
+      - main
+    paths:
+      - "zillow_transformation/**"
+      - ".github/workflows/real-estate-transformation-cicd.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "zillow_transformation/**"
+      - ".github/workflows/real-estate-transformation-cicd.yml"
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: "3.9"
+
+jobs:
+  transform:
+    name: Run dbt Transformation
+    runs-on: ubuntu-latest
+
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_STORAGE_BUCKET: ${{ secrets.SUPABASE_STORAGE_BUCKET }}
+      SUPABASE_RAW_PREFIX: ${{ secrets.SUPABASE_RAW_PREFIX }}
+      SUPABASE_DB_HOST: ${{ secrets.SUPABASE_DB_HOST }}
+      SUPABASE_DB_PORT: ${{ secrets.SUPABASE_DB_PORT }}
+      SUPABASE_DB_USER: ${{ secrets.SUPABASE_DB_USER }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      SUPABASE_DB_NAME: ${{ secrets.SUPABASE_DB_NAME }}
+      SUPABASE_SCHEMA: ${{ secrets.SUPABASE_SCHEMA }}
+      SUPABASE_DB_SSLMODE: ${{ secrets.SUPABASE_DB_SSLMODE }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dbt
+        run: |
+          python -m pip install --upgrade pip
+          pip install dbt-postgres pandas python-dotenv supabase psycopg2-binary
+
+      - name: Configure dbt profile
+        run: |
+          mkdir -p ~/.dbt
+          cp zillow_transformation/profiles.yml.example ~/.dbt/profiles.yml
+
+      - name: Verify required database secrets
+        run: |
+          required=(SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY SUPABASE_STORAGE_BUCKET SUPABASE_DB_HOST SUPABASE_DB_PORT SUPABASE_DB_USER SUPABASE_DB_PASSWORD SUPABASE_DB_NAME)
+          for key in "${required[@]}"; do
+            if [ -z "${!key}" ]; then
+              echo "❌ Missing required secret: $key"
+              exit 1
+            fi
+          done
+          echo "✅ Required storage/database secrets are present"
+
+      - name: Load latest raw CSV into raw schema
+        env:
+          SUPABASE_RAW_TABLE: raw_property_master_data
+        run: |
+          python scripts/load_file_to_database.py
+
+      - name: Install dbt packages
+        working-directory: zillow_transformation
+        run: dbt deps
+
+      - name: Run dbt models
+        working-directory: zillow_transformation
+        run: dbt run --target dev
+
+      - name: Run dbt tests
+        working-directory: zillow_transformation
+        run: dbt test --target dev
+
+      - name: Upload dbt artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dbt-artifacts-${{ github.run_number }}
+          path: |
+            zillow_transformation/target/
+            zillow_transformation/logs/
+          retention-days: 30

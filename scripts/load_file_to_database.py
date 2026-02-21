@@ -1,6 +1,7 @@
 import os
 from io import BytesIO, StringIO
 from datetime import datetime, timezone
+from typing import Optional
 
 import pandas as pd
 import psycopg2
@@ -46,6 +47,29 @@ def download_csv_from_storage(bucket: str, path: str) -> pd.DataFrame:
     if not content:
         raise ValueError(f"Could not download '{path}' from '{bucket}'")
     return pd.read_csv(BytesIO(content))
+
+
+def resolve_latest_csv_path(bucket: str, prefix: str = "raw") -> str:
+    supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_SERVICE_ROLE_KEY"))
+    prefix = (prefix or "raw").strip("/")
+
+    # Supabase list returns object metadata including "name"
+    objects = supabase.storage.from_(bucket).list(
+        path=prefix,
+        options={
+            "limit": 1000,
+            "offset": 0,
+            "sortBy": {"column": "name", "order": "desc"},
+        },
+    )
+    csv_names = sorted(
+        [obj["name"] for obj in objects if obj.get("name", "").endswith(".csv")],
+        reverse=True,
+    )
+    if not csv_names:
+        raise ValueError(f"No CSV files found in {bucket}/{prefix}")
+    latest_name = csv_names[0]
+    return f"{prefix}/{latest_name}"
 
 
 def to_bool_sql(expr: str) -> str:
@@ -97,7 +121,7 @@ def safe_bigint_sql(expr: str) -> str:
     """
 
 
-def load_to_staging(conn, df: pd.DataFrame):
+def load_to_staging(conn, df: pd.DataFrame, schema: str = SCHEMA, staging_table: str = STG_TABLE):
     # Normalize headers to match Postgres behavior
     df.columns = df.columns.str.strip().str.lower()
 
@@ -123,9 +147,9 @@ def load_to_staging(conn, df: pd.DataFrame):
     buf.seek(0)
 
     with conn.cursor() as cur:
-        cur.execute(f"TRUNCATE TABLE {SCHEMA}.{STG_TABLE};")
+        cur.execute(f"TRUNCATE TABLE {schema}.{staging_table};")
         copy_sql = f"""
-            COPY {SCHEMA}.{STG_TABLE} ({", ".join(EXPECTED_COLS)})
+            COPY {schema}.{staging_table} ({", ".join(EXPECTED_COLS)})
             FROM STDIN WITH (FORMAT CSV, HEADER TRUE);
         """
         cur.copy_expert(copy_sql, buf)
@@ -133,11 +157,16 @@ def load_to_staging(conn, df: pd.DataFrame):
     conn.commit()
 
 
-def stage_to_target(conn) -> int:
+def stage_to_target(
+    conn,
+    schema: str = SCHEMA,
+    staging_table: str = STG_TABLE,
+    target_table: str = TGT_TABLE,
+) -> int:
     s = lambda c: f"s.{c}"
 
     insert_sql = f"""
-    INSERT INTO {SCHEMA}.{TGT_TABLE} (
+    INSERT INTO {schema}.{target_table} (
       address, bathrooms, bedrooms, brokername, carouselphotos,
       comingsoononmarketdate, contingentlistingtype, country, currency,
       datepricechanged, daysonzillow, detailurl, has3dmodel, hasimage, hasvideo,
@@ -183,7 +212,7 @@ def stage_to_target(conn) -> int:
       NULLIF({s('ingested_time')}, '')::timestamptz,
       NULLIF({s('snapshot_date')}, ''),
       NULLIF({s('source_file')}, '')
-    FROM {SCHEMA}.{STG_TABLE} s
+    FROM {schema}.{staging_table} s
     WHERE NULLIF({s('zpid')}, '') IS NOT NULL
       AND NULLIF({s('extracted_at')}, '') IS NOT NULL
     ON CONFLICT (zpid, extracted_at, price) DO NOTHING;
@@ -197,26 +226,49 @@ def stage_to_target(conn) -> int:
     return inserted
 
 
+def load_csv_from_supabase_storage_to_table(
+    storage_file_path: Optional[str] = None,
+    storage_bucket: Optional[str] = None,
+    schema: str = SCHEMA,
+    table_name: str = TGT_TABLE,
+    raw_prefix: str = "raw",
+) -> int:
+    bucket = storage_bucket or os.getenv("SUPABASE_STORAGE_BUCKET")
+    if not bucket:
+        raise ValueError("Missing SUPABASE_STORAGE_BUCKET")
+
+    resolved_path = storage_file_path or os.getenv("SUPABASE_FILE_PATH")
+    if not resolved_path:
+        resolved_path = resolve_latest_csv_path(bucket=bucket, prefix=(raw_prefix or "raw"))
+        print(f"Resolved latest raw CSV: {resolved_path}")
+
+    df = download_csv_from_storage(bucket, resolved_path)
+    print(f"Read {len(df)} rows and {len(df.columns)} columns")
+
+    # add source_file now (used in staging)
+    df["source_file"] = resolved_path
+
+    conn = get_conn()
+    try:
+        load_to_staging(conn, df, schema=schema)
+        inserted = stage_to_target(conn, schema=schema, target_table=table_name)
+        print(f"✅ Done. Inserted {inserted} new rows into {schema}.{table_name}")
+        return inserted
+    finally:
+        conn.close()
+
+
 def main():
     bucket = os.getenv("SUPABASE_STORAGE_BUCKET")
     if not bucket:
         raise ValueError("Missing SUPABASE_STORAGE_BUCKET in .env")
-
-    storage_file_path = "raw/raw_20260209_20260209_0631.csv"  # <-- change if needed
-
-    df = download_csv_from_storage(bucket, storage_file_path)
-    print(f"Read {len(df)} rows and {len(df.columns)} columns")
-
-    # add source_file now (used in staging)
-    df["source_file"] = storage_file_path
-
-    conn = get_conn()
-    try:
-        load_to_staging(conn, df)
-        inserted = stage_to_target(conn)
-        print(f"✅ Done. Inserted {inserted} new rows into {SCHEMA}.{TGT_TABLE}")
-    finally:
-        conn.close()
+    load_csv_from_supabase_storage_to_table(
+        storage_file_path=os.getenv("SUPABASE_FILE_PATH"),
+        storage_bucket=bucket,
+        schema=os.getenv("SUPABASE_SCHEMA", SCHEMA),
+        table_name=os.getenv("SUPABASE_RAW_TABLE", TGT_TABLE),
+        raw_prefix=os.getenv("SUPABASE_RAW_PREFIX", "raw"),
+    )
 
 
 if __name__ == "__main__":

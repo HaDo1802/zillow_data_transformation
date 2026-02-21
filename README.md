@@ -195,6 +195,20 @@ This structure supports efficient filtering, aggregation, and historical analysi
 
 Historical changes are preserved via the **snapshot-based grain** in silver and the **incremental snapshot fact** in gold. This enables point-in-time reporting without overwriting history.
 
+## 🧭 Backfill and Snapshot Grain (Important)
+
+When doing a one-time historical backfill (many CSV files loaded on the same day), load metadata like `ingested_time` and raw `snapshot_date` can be misleading for business grain.
+
+Current modeling behavior:
+- Silver event key (`property_sk`) uses: `zillow_property_id + snapshot_date + extracted_at`
+- Silver `snapshot_date` prefers `extracted_at::date` (true event date)
+- Gold `fact_property_snapshot` keeps one row per `property_id + snapshot_date` (latest record that day)
+- Gold `fact_property_latest` keeps one row per property (latest overall)
+
+Practical expectation:
+- `gold.fact_property_snapshot` row count is usually greater than or equal to `gold.fact_property_latest`
+- They are equal only if each property appears on exactly one snapshot date
+
 ---
 
 ## 🧪 Data Quality Framework
