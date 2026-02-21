@@ -9,13 +9,16 @@ with source as (
 
 ),
 
-mapping as (
+geo_mapping as (
 
     select
-        lower(keyword) as keyword,
         district,
+        min_latitude,
+        max_latitude,
+        min_longitude,
+        max_longitude,
         priority
-    from {{ ref('district_map') }}
+    from {{ ref('district_geo_bbox_map') }}
 
 ),
 
@@ -184,20 +187,21 @@ district_enriched as (
     select
         address_enriched.*,
         coalesce(
-            vegas_district_raw,
-            matched_district.district,
-            nullif(trim(address_enriched.city), ''),
+            nearest_geo_district.district,
             'Las Vegas'
         ) as vegas_district
     from address_enriched
     left join lateral (
-        select district
-        from mapping m
-        where address_enriched.address_raw is not null
-          and lower(address_enriched.address_raw) like '%' || m.keyword || '%'
-        order by m.priority asc
+        select g.district
+        from geo_mapping g
+        where address_enriched.latitude is not null
+          and address_enriched.longitude is not null
+        order by
+            power(address_enriched.latitude - ((g.min_latitude + g.max_latitude) / 2.0), 2)
+            + power(address_enriched.longitude - ((g.min_longitude + g.max_longitude) / 2.0), 2),
+            g.priority asc
         limit 1
-    ) matched_district on true
+    ) nearest_geo_district on true
 
 ),
 
