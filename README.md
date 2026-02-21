@@ -56,7 +56,7 @@ real_estate_transformation/
 - **Modeling Approach**: Kimball Star Schema
 - **Change Tracking**: Snapshot-based history in silver + incremental facts in gold
 
-> This project intentionally uses PostgreSQL to demonstrate that dbt is effective beyond cloud-native warehouses.
+> This project intentionally uses Supabase because of it generous free cloud-Postgres, and very easy to maintain.
 
 ---
 
