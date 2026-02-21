@@ -293,3 +293,9 @@ select
         'extracted_at'
     ]) }} as property_sk
 from standardized
+where price > 0
+  and bedrooms > 0
+  and bathrooms > 0
+  and living_area > 0
+  and normalized_lot_area_value > 0
+  and nullif(lower(trim(normalized_lot_area_unit)), 'nan') is not null
