@@ -510,3 +510,45 @@ This design is stable for regular ETL runs:
 4. Gold latest stays one row/property.
 
 If you later need intraday analytics in gold, change snapshot fact grain to include `extracted_at` and update related uniqueness tests accordingly.
+
+## 16) GitHub Actions + Supabase DB Connectivity Note
+
+This section documents a CI-specific issue when running:
+
+```bash
+python scripts/load_file_to_database.py
+```
+
+### Symptom A
+Error in GitHub Actions:
+
+`psycopg2.OperationalError: ... Network is unreachable`
+
+Observed with DB host resolving to an IPv6 address (`2600:...`).
+
+### Root cause A
+The Supabase **Direct connection** endpoint is not IPv4-compatible in this setup.  
+GitHub-hosted runners could not reach that IPv6 path.
+
+### Symptom B
+After switching host/user:
+
+`FATAL: Tenant or user not found`
+
+### Root cause B
+Connection settings were mixed across methods (pooler host/user + direct port/password).  
+Supabase pooler expects a fully consistent parameter set.
+
+### Correct fix for GitHub Actions
+Use one complete **Session Pooler** connection set from Supabase Dashboard (do not mix with Direct connection values):
+
+1. `SUPABASE_DB_HOST` = session pooler host (example: `aws-1-us-west-1.pooler.supabase.com`)
+2. `SUPABASE_DB_PORT` = session pooler port
+3. `SUPABASE_DB_USER` = session pooler user (example format: `postgres.<project_ref>`)
+4. `SUPABASE_DB_PASSWORD` = DB password for that project/user
+5. `SUPABASE_DB_NAME` = usually `postgres`
+6. `SUPABASE_DB_SSLMODE` = `require`
+
+### Practical rule
+- Local laptop can still use Direct connection if it works there.
+- GitHub Actions should use Session Pooler unless you have Supabase IPv4 add-on for Direct connection.

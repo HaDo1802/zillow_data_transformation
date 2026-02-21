@@ -1,3 +1,35 @@
-logs/
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.venv/
+venv/
+
+# Environment / secrets
 .env
-learning_note.md
+.env.*
+!.env.example
+
+# Airflow / runtime logs
+logs/
+airflow/logs/
+
+# dbt build artifacts
+zillow_transformation/target/
+zillow_transformation/dbt_packages/
+zillow_transformation/logs/
+zillow_transformation/.user.yml

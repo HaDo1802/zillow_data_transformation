@@ -1,9 +1,19 @@
+[![Real Estate Transformation Pipeline CI/CD](https://github.com/HaDo1802/zillow_data_transformation/actions/workflows/real-estate-transformation-cicd.yml/badge.svg)](https://github.com/HaDo1802/zillow_data_transformation/actions/workflows/real-estate-transformation-cicd.yml)
+
 # 🏡 Zillow Real Estate Analytics — dbt Star Schema Project
 
 This project implements a **modern, production-style data transformation pipeline** for real estate analytics using historical Zillow property listing data. Raw snapshot-based listing data is transformed into a **well-structured star schema** using **dbt**, enabling time-aware analysis of property prices, listing behavior, and market dynamics.
 
 The project follows **industry best practices** in dimensional modeling, incremental fact tables, data quality testing, and documentation-driven development.
 ![Tech Stack](data_model_material/tech_stack.png)
+
+## 🔁 CI/CD Workflow
+
+This repo is automated with GitHub Actions:
+- **Extract pipeline** runs daily at **6:00 AM UTC** ([separate extract workflow](https://github.com/HaDo1802/zillow_data_extract)) to land latest raw CSV in Supabase Storage.
+- **Transformation pipeline** (`.github/workflows/real-estate-transformation-cicd.yml`) runs daily at **7:00 AM UTC** (1 hour later).
+- Transform CI/CD flow: load latest raw CSV into `raw.raw_property_master_data` -> `dbt deps` -> `dbt run` -> `dbt test`.
+- Reason: This automated set-up is great for alternative option when EC2/virtual machine is not available!
 
 ## 🗂 Project Structure
 
