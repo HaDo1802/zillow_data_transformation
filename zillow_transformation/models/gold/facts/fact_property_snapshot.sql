@@ -12,6 +12,7 @@ with source as (
     select
         zillow_property_id as property_id,
         snapshot_date,
+        extracted_at,
         ingested_time as digested_time,
 
         price,
@@ -41,7 +42,11 @@ max_loaded as (
 final as (
 
     select
-        *
+        *,
+        row_number() over (
+            partition by property_id, snapshot_date
+            order by extracted_at desc nulls last, digested_time desc nulls last
+        ) as row_num
     from source
     {% if is_incremental() %}
     where digested_time >= (select max_digested_time from max_loaded)
@@ -65,3 +70,4 @@ select
     days_on_zillow,
     listing_status
 from final
+where row_num = 1

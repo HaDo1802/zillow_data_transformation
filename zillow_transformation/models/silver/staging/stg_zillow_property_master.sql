@@ -25,10 +25,15 @@ base as (
         -- identifiers
         nullif(trim(zpid::text), '') as zillow_property_id,
 
-       case
-            when snapshot_date::text ~ '^\d{8}$' then to_date(snapshot_date::text, 'YYYYMMDD')
-            else snapshot_date::date
-       end as snapshot_date,
+       -- For one-time historical backfills, raw snapshot_date may be load-date.
+       -- Use extracted_at date as canonical snapshot date when available.
+       coalesce(
+            (trim(extracted_at::text)::timestamptz)::date,
+            case
+                when snapshot_date::text ~ '^\d{8}$' then to_date(snapshot_date::text, 'YYYYMMDD')
+                else snapshot_date::date
+            end
+       ) as snapshot_date,
 
         -- timestamps
        trim(extracted_at::text)::timestamptz as extracted_at, 
@@ -38,29 +43,29 @@ base as (
 
         -- numeric fields
         (regexp_replace(price::text, ',', '', 'g'))::numeric as price,
-        (regexp_replace("priceChange"::text, ',', '', 'g'))::numeric as price_change,
+        (regexp_replace(pricechange::text, ',', '', 'g'))::numeric as price_change,
         (regexp_replace(bedrooms::text, ',', '', 'g'))::int as bedrooms,
         (regexp_replace(bathrooms::text, ',', '', 'g'))::numeric as bathrooms,
-        (regexp_replace("livingArea"::text, ',', '', 'g'))::numeric as living_area,
-        (regexp_replace("lotAreaValue"::text, ',', '', 'g'))::numeric as raw_lot_area_value,
+        (regexp_replace(livingarea::text, ',', '', 'g'))::numeric as living_area,
+        (regexp_replace(lotareavalue::text, ',', '', 'g'))::numeric as raw_lot_area_value,
          
-        (regexp_replace("rentZestimate"::text, ',', '', 'g'))::numeric as rent_zestimate,
+        (regexp_replace(rentzestimate::text, ',', '', 'g'))::numeric as rent_zestimate,
         (regexp_replace(zestimate::text, ',', '', 'g'))::numeric as zestimate,
-        (regexp_replace("daysOnZillow"::text, ',', '', 'g'))::int as days_on_zillow,
+        (regexp_replace(daysonzillow::text, ',', '', 'g'))::int as days_on_zillow,
 
         -- categorical fields
         (
             case
-                when "propertyType" is null then null
-                when upper(replace(trim("propertyType"::text), '-', '_')) in ('SINGLE_FAMILY', 'SINGLEFAMILY') then 'SINGLE_FAMILY'
-                when upper(replace(trim("propertyType"::text), '-', '_')) in ('MULTI_FAMILY', 'MULTIFAMILY') then 'MULTI_FAMILY'
-                when upper(replace(trim("propertyType"::text), '-', '_')) in ('MOBILE', 'MANUFACTURED') then 'MOBILE'
-                when upper(replace(trim("propertyType"::text), '-', '_')) in ('CONDO', 'TOWNHOUSE', 'LOT', 'COOP', 'APARTMENT') then upper(replace(trim("propertyType"::text), '-', '_'))
+                when propertytype is null then null
+                when upper(replace(trim(propertytype::text), '-', '_')) in ('SINGLE_FAMILY', 'SINGLEFAMILY') then 'SINGLE_FAMILY'
+                when upper(replace(trim(propertytype::text), '-', '_')) in ('MULTI_FAMILY', 'MULTIFAMILY') then 'MULTI_FAMILY'
+                when upper(replace(trim(propertytype::text), '-', '_')) in ('MOBILE', 'MANUFACTURED') then 'MOBILE'
+                when upper(replace(trim(propertytype::text), '-', '_')) in ('CONDO', 'TOWNHOUSE', 'LOT', 'COOP', 'APARTMENT') then upper(replace(trim(propertytype::text), '-', '_'))
                 else 'OTHER'
             end
         ) as property_type,
-        (trim("listingStatus"::text)) as listing_status,
-        nullif(trim("lotAreaUnit"::text), '') as raw_lot_area_unit,
+        (trim(listingstatus::text)) as listing_status,
+        nullif(trim(lotareaunit::text), '') as raw_lot_area_unit,
         -- location fields (raw inputs)
         {%- if 'address' in colnames %}
         (trim(address::text)) as address_raw,
@@ -102,7 +107,7 @@ base as (
         nullif(regexp_replace(longitude::text, ',', '', 'g'), '')::numeric as longitude,
 
         -- raw listing subtype inputs
-        nullif(trim("listingSubType"::text), '') as listing_subtype_raw,
+        nullif(trim(listingsubtype::text), '') as listing_subtype_raw,
 
         {%- if 'is_fsba' in colnames %}
         nullif(trim(is_fsba::text), '') as is_fsba_raw,
@@ -117,24 +122,24 @@ base as (
         {%- endif %}
 
         -- raw units / timestamps
-        nullif(trim("datePriceChanged"::text), '') as date_price_changed_raw,
+        nullif(trim(datepricechanged::text), '') as date_price_changed_raw,
 
         -- boolean fields
         case
-            when lower(nullif(trim("has3DModel"::text), '')) in ('true', 't', '1', 'yes', 'y') then true
-            when lower(nullif(trim("has3DModel"::text), '')) in ('false', 'f', '0', 'no', 'n') then false
+            when lower(nullif(trim(has3dmodel::text), '')) in ('true', 't', '1', 'yes', 'y') then true
+            when lower(nullif(trim(has3dmodel::text), '')) in ('false', 'f', '0', 'no', 'n') then false
             else null
         end as has_3d_model,
 
         case
-            when lower(nullif(trim("hasImage"::text), '')) in ('true', 't', '1', 'yes', 'y') then true
-            when lower(nullif(trim("hasImage"::text), '')) in ('false', 'f', '0', 'no', 'n') then false
+            when lower(nullif(trim(hasimage::text), '')) in ('true', 't', '1', 'yes', 'y') then true
+            when lower(nullif(trim(hasimage::text), '')) in ('false', 'f', '0', 'no', 'n') then false
             else null
         end as has_image,
 
         case
-            when lower(nullif(trim("hasVideo"::text), '')) in ('true', 't', '1', 'yes', 'y') then true
-            when lower(nullif(trim("hasVideo"::text), '')) in ('false', 'f', '0', 'no', 'n') then false
+            when lower(nullif(trim(hasvideo::text), '')) in ('true', 't', '1', 'yes', 'y') then true
+            when lower(nullif(trim(hasvideo::text), '')) in ('false', 'f', '0', 'no', 'n') then false
             else null
         end as has_video
 
@@ -280,6 +285,7 @@ select
 
     {{ dbt_utils.generate_surrogate_key([
         'zillow_property_id',
-        'snapshot_date'
+        'snapshot_date',
+        'extracted_at'
     ]) }} as property_sk
 from standardized
