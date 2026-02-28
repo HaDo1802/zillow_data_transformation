@@ -201,6 +201,31 @@ This structure supports efficient filtering, aggregation, and historical analysi
 
 ---
 
+## 🛠️ Database Constraint Setup
+
+After your dbt models are built, run [`utils/set_up.sql`](utils/set_up.sql) once to enforce referential and unique keys in the gold layer.
+
+This script adds:
+- Primary key on `gold.dim_property(property_id)`
+- Primary key on `gold.dim_date(date_day)`
+- Composite primary key on `gold.fact_property_snapshot(property_id, snapshot_date)`
+- Foreign key from `gold.fact_property_snapshot.property_id` to `gold.dim_property.property_id`
+- Foreign key from `gold.fact_property_snapshot.snapshot_date` to `gold.dim_date.date_day`
+
+Example:
+
+```bash
+psql "$DATABASE_URL" -f utils/set_up.sql
+```
+
+Recommended order:
+1. Load raw data into `raw.raw_property_master_data`
+2. Run `dbt run` to build/update silver and gold models
+3. Run `utils/set_up.sql` to apply key constraints
+4. Run `dbt test`
+
+---
+
 ## 🔄 Historical Tracking
 
 Historical changes are preserved via the **snapshot-based grain** in silver and the **incremental snapshot fact** in gold. This enables point-in-time reporting without overwriting history.
