@@ -28,21 +28,24 @@ models:
         tests:
           - not_null
           - relationships:
-              to: ref('dim_property')
-              field: property_id
+              arguments:
+                to: ref('dim_property')
+                field: property_id
       - name: snapshot_date
         tests:
           - not_null
           - relationships:
-              to: ref('dim_date')
-              field: date_day
+              arguments:
+                to: ref('dim_date')
+                field: date_day
       - name: digested_time
         description: Ingestion timestamp for lineage.
     tests:
       - dbt_utils.unique_combination_of_columns:
-          combination_of_columns:
-            - property_id
-            - snapshot_date
+          arguments:
+            combination_of_columns:
+              - property_id
+              - snapshot_date
 
   - name: fact_property_latest
     description: Latest snapshot per property.
