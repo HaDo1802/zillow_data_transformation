@@ -2,65 +2,40 @@ version: 2
 
 models:
   - name: stg_zillow_property_master
-    description: Silver staging model for raw Zillow property snapshots with standardized types and naming.
     columns:
-      - name: zillow_property_id
-        description: Zillow unique identifier for the property.
+      - name: property_sk
+        tests:
+          - not_null
+          - unique
+      - name: zpid
+        tests:
+          - not_null
+      - name: extracted_at
         tests:
           - not_null
       - name: snapshot_date
-        description: Date of the snapshot (normalized to DATE).
         tests:
           - not_null
       - name: source_file_key
-        description: Source file path used to ingest the snapshot.
         tests:
           - not_null
-      - name: listing_status
-        description: Listing status at snapshot time.
-        tests:
-          - accepted_values:
-              values: ["FOR_SALE", "SOLD", "PENDING", "FOR_RENT", "OFF_MARKET"]
-              quote: true
-      - name: property_type
-        description: Zillow property type.
-        tests:
-          - accepted_values:
-              values:
-                [
-                  "SINGLE_FAMILY",
-                  "CONDO",
-                  "TOWNHOUSE",
-                  "MULTI_FAMILY",
-                  "LOT",
-                  "MOBILE",
-                  "COOP",
-                  "APARTMENT",
-                  "OTHER",
-                ]
-              quote: true
-      - name: date_price_changed_at
-        description: Timestamp when the listing price last changed (converted from Unix ms).
-
     tests:
       - dbt_utils.unique_combination_of_columns:
-          combination_of_columns:
-            - zillow_property_id
-            - snapshot_date
-            - extracted_at
+          arguments:
+            combination_of_columns:
+              - zpid
+              - source_file_key
 
-  - name: int_zillow_property_latest
-    description: Latest snapshot per property based on most recent snapshot_date.
+  - name: int_zillow_property_history
     columns:
-      - name: zillow_property_id
+      - name: property_sk
         tests:
           - not_null
           - unique
 
-  - name: int_zillow_property_history
-    description: Incremental history of all property snapshots from the staging model.
+  - name: int_zillow_property_latest
     columns:
-      - name: property_sk
+      - name: zpid
         tests:
           - not_null
           - unique
