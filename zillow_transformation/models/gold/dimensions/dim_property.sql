@@ -5,11 +5,11 @@
     )
 }}
 
-with ranked as (
+-- Read the latest silver state so the dimension stays Type 1 and one row per property.
+with latest_property_state as (
 
     select
-        zillow_property_id,
-        zillow_property_id as property_id,
+        zpid as property_id,
         street_address,
         city,
         state,
@@ -17,30 +17,10 @@ with ranked as (
         vegas_district,
         latitude,
         longitude,
-        property_type,
-        ingested_time,
-        extracted_at,
-        snapshot_date,
-        row_number() over (
-            partition by zillow_property_id
-            order by ingested_time desc nulls last,
-                     extracted_at desc nulls last,
-                     snapshot_date desc nulls last
-        ) as row_num
-    from {{ ref('int_zillow_property_history') }}
+        propertytype as property_type
+    from {{ ref('int_zillow_property_latest') }}
 
 )
 
-select
-    property_id,
-    zillow_property_id,
-    street_address,
-    city,
-    state,
-    zip_code,
-    vegas_district,
-    latitude,
-    longitude,
-    property_type
-from ranked
-where row_num = 1
+select *
+from latest_property_state

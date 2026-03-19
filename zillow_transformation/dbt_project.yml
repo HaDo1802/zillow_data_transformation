@@ -33,13 +33,16 @@ models:
     gold:
       dimensions:
         +materialized: table
-        +on_schema_change: "append_new_columns"
-        +schema: dim
+        +schema: gold
 
       facts:
         +materialized: incremental
         +on_schema_change: "append_new_columns"
-        +schema: fact
+        +schema: gold
+
+      marts:
+        +materialized: view
+        +schema: gold
 
 # Snapshot configuration
 # snapshots:

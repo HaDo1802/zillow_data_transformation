@@ -9,19 +9,10 @@
 {%- set bigint_min = -9223372036854775808 -%}
 {%- set bigint_max = 9223372036854775807 -%}
 
--- Read from the bronze source and only process newly ingested rows on incremental runs.
-with source_rows as (
 
-    select *
-    from {{ src }}
-    {% if is_incremental() %}
-    where ingested_at::timestamptz > (select max(ingested_at) from {{ this }})
-    {% endif %}
-
-),
 
 -- Standardize raw text fields with trim/null handling before type casting.
-trimmed_fields as (
+with trimmed_fields as (
 
     select
         nullif(trim(zpid), '') as zpid_raw,
@@ -55,7 +46,7 @@ trimmed_fields as (
         nullif(trim(has3dmodel), '') as has3dmodel_raw,
         nullif(trim(hasimage), '') as hasimage_raw,
         nullif(trim(hasvideo), '') as hasvideo_raw
-    from source_rows
+    from {{ src }}
 
 ),
 

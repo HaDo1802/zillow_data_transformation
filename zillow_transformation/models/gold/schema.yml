@@ -2,19 +2,13 @@ version: 2
 
 models:
   - name: dim_property
-    description: Type 1 dimension for stable property attributes.
     columns:
       - name: property_id
         tests:
           - not_null
           - unique
-      - name: zillow_property_id
-        tests:
-          - not_null
-          - unique
 
   - name: dim_date
-    description: Calendar dimension generated from available snapshot dates.
     columns:
       - name: date_day
         tests:
@@ -22,7 +16,6 @@ models:
           - unique
 
   - name: fact_property_snapshot
-    description: Snapshot fact table at grain property_id per snapshot_date.
     columns:
       - name: property_id
         tests:
@@ -38,8 +31,18 @@ models:
               arguments:
                 to: ref('dim_date')
                 field: date_day
-      - name: digested_time
-        description: Ingestion timestamp for lineage.
+      - name: price
+        tests:
+          - not_null
+      - name: living_area
+        tests:
+          - not_null
+      - name: listing_status
+        tests:
+          - not_null
+      - name: bedrooms
+        tests:
+          - not_null
     tests:
       - dbt_utils.unique_combination_of_columns:
           arguments:
@@ -47,10 +50,27 @@ models:
               - property_id
               - snapshot_date
 
-  - name: fact_property_latest
-    description: Latest snapshot per property.
+  - name: mart_property_current
     columns:
       - name: property_id
         tests:
           - not_null
           - unique
+
+  - name: mart_market_summary
+    columns:
+      - name: vegas_district
+        tests:
+          - not_null
+      - name: snapshot_date
+        tests:
+          - not_null
+      - name: listing_count
+        tests:
+          - not_null
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - vegas_district
+              - snapshot_date
