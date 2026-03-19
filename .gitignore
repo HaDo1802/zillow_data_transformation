@@ -33,3 +33,5 @@ zillow_transformation/target/
 zillow_transformation/dbt_packages/
 zillow_transformation/logs/
 zillow_transformation/.user.yml
+
+learning_note.md
