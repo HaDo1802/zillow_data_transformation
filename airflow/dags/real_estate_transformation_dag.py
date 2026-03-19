@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import os
@@ -15,7 +14,9 @@ from airflow.operators.python import PythonOperator
 _THIS_FILE = Path(__file__).resolve()
 REPO_ROOT = Path(os.getenv("REPO_ROOT", _THIS_FILE.parents[2]))
 SCRIPTS_DIR = REPO_ROOT / "scripts"
-DBT_PROJECT_DIR = Path(os.getenv("DBT_PROJECT_DIR", REPO_ROOT / "zillow_transformation"))
+DBT_PROJECT_DIR = Path(
+    os.getenv("DBT_PROJECT_DIR", REPO_ROOT / "zillow_transformation")
+)
 DBT_PROFILES_DIR = Path(
     os.getenv("DBT_PROFILES_DIR", DBT_PROJECT_DIR)
 )  # defaults to project dir
@@ -30,9 +31,8 @@ def _load_raw_from_supabase_storage(**context: dict) -> None:
     dag_run = context.get("dag_run")
     dag_conf = dag_run.conf if dag_run and dag_run.conf else {}
 
-    storage_file_path = (
-        dag_conf.get("storage_file_path")
-        or os.getenv("SUPABASE_FILE_PATH")
+    storage_file_path = dag_conf.get("storage_file_path") or os.getenv(
+        "SUPABASE_FILE_PATH"
     )
     if not storage_file_path:
         raise ValueError(

@@ -15,17 +15,45 @@ STG_TABLE = "raw_property_master_data_stg"
 TGT_TABLE = "raw_property_master_data"
 
 BIGINT_MIN = -9223372036854775808
-BIGINT_MAX =  9223372036854775807
+BIGINT_MAX = 9223372036854775807
 
 EXPECTED_COLS = [
-    "address","bathrooms","bedrooms","brokername","carouselphotos",
-    "comingsoononmarketdate","contingentlistingtype","country","currency",
-    "datepricechanged","daysonzillow","detailurl","has3dmodel","hasimage",
-    "hasvideo","imgsrc","latitude","listingstatus","listingsubtype",
-    "livingarea","longitude","lotareaunit","lotareavalue","price",
-    "pricechange","propertytype","rentzestimate","variabledata","zestimate",
-    "zpid","unit","newconstructiontype","extracted_at",
-    "ingested_time","snapshot_date","source_file"
+    "address",
+    "bathrooms",
+    "bedrooms",
+    "brokername",
+    "carouselphotos",
+    "comingsoononmarketdate",
+    "contingentlistingtype",
+    "country",
+    "currency",
+    "datepricechanged",
+    "daysonzillow",
+    "detailurl",
+    "has3dmodel",
+    "hasimage",
+    "hasvideo",
+    "imgsrc",
+    "latitude",
+    "listingstatus",
+    "listingsubtype",
+    "livingarea",
+    "longitude",
+    "lotareaunit",
+    "lotareavalue",
+    "price",
+    "pricechange",
+    "propertytype",
+    "rentzestimate",
+    "variabledata",
+    "zestimate",
+    "zpid",
+    "unit",
+    "newconstructiontype",
+    "extracted_at",
+    "ingested_time",
+    "snapshot_date",
+    "source_file",
 ]
 
 
@@ -41,7 +69,9 @@ def get_conn():
 
 
 def download_csv_from_storage(bucket: str, path: str) -> pd.DataFrame:
-    supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_SERVICE_ROLE_KEY"))
+    supabase = create_client(
+        os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+    )
     print(f"Downloading '{path}' from bucket '{bucket}'...")
     content = supabase.storage.from_(bucket).download(path)
     if not content:
@@ -50,7 +80,9 @@ def download_csv_from_storage(bucket: str, path: str) -> pd.DataFrame:
 
 
 def resolve_latest_csv_path(bucket: str, prefix: str = "raw") -> str:
-    supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_SERVICE_ROLE_KEY"))
+    supabase = create_client(
+        os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+    )
     prefix = (prefix or "raw").strip("/")
 
     # Supabase list returns object metadata including "name"
@@ -121,7 +153,9 @@ def safe_bigint_sql(expr: str) -> str:
     """
 
 
-def load_to_staging(conn, df: pd.DataFrame, schema: str = SCHEMA, staging_table: str = STG_TABLE):
+def load_to_staging(
+    conn, df: pd.DataFrame, schema: str = SCHEMA, staging_table: str = STG_TABLE
+):
     # Normalize headers to match Postgres behavior
     df.columns = df.columns.str.strip().str.lower()
 
@@ -239,7 +273,9 @@ def load_csv_from_supabase_storage_to_table(
 
     resolved_path = storage_file_path or os.getenv("SUPABASE_FILE_PATH")
     if not resolved_path:
-        resolved_path = resolve_latest_csv_path(bucket=bucket, prefix=(raw_prefix or "raw"))
+        resolved_path = resolve_latest_csv_path(
+            bucket=bucket, prefix=(raw_prefix or "raw")
+        )
         print(f"Resolved latest raw CSV: {resolved_path}")
 
     df = download_csv_from_storage(bucket, resolved_path)

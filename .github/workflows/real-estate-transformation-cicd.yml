@@ -1,8 +1,8 @@
 name: Real Estate Transformation Pipeline CI/CD
 
 on:
-  schedule:
-    - cron: "0 7 * * *" # Daily at 7 AM UTC (1 hour after extract at 6 AM UTC)
+  # schedule:
+  #   - cron: "0 7 * * *" # Daily at 7 AM UTC (1 hour after extract at 6 AM UTC)
   push:
     branches:
       - main

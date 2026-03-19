@@ -176,7 +176,9 @@ def apply_dashboard_filters(market_df: pd.DataFrame) -> tuple[pd.DataFrame, list
 
     filtered = market_df.loc[
         market_df["vegas_district"].isin(selected_districts)
-        & market_df["snapshot_date"].dt.date.between(selected_dates[0], selected_dates[1])
+        & market_df["snapshot_date"].dt.date.between(
+            selected_dates[0], selected_dates[1]
+        )
     ].copy()
 
     return filtered, selected_districts
@@ -194,7 +196,9 @@ def _cached_regression_line(x_values: tuple[float, ...], y_values: tuple[float, 
     return x_line, y_line
 
 
-def add_regression_line(fig: go.Figure, x: pd.Series, y: pd.Series, name: str = "Trend") -> go.Figure:
+def add_regression_line(
+    fig: go.Figure, x: pd.Series, y: pd.Series, name: str = "Trend"
+) -> go.Figure:
     x_line, y_line = _cached_regression_line(tuple(x.tolist()), tuple(y.tolist()))
     if x_line is None or y_line is None:
         return fig
@@ -213,7 +217,9 @@ def add_regression_line(fig: go.Figure, x: pd.Series, y: pd.Series, name: str = 
 
 def render_dashboard_page() -> None:
     st.title("Las Vegas Real Estate Investment Dashboard")
-    st.caption("This dashboard provides insights for Las Vegas investment and pricing analysis")
+    st.caption(
+        "This dashboard provides insights for Las Vegas investment and pricing analysis"
+    )
 
     try:
         market_df = load_market_summary()
@@ -236,7 +242,9 @@ def render_dashboard_page() -> None:
         st.session_state["selected_districts"] = districts
     else:
         st.session_state["selected_districts"] = [
-            district for district in st.session_state["selected_districts"] if district in districts
+            district
+            for district in st.session_state["selected_districts"]
+            if district in districts
         ] or districts
 
     st.sidebar.title("Filters")
@@ -264,12 +272,18 @@ def render_dashboard_page() -> None:
         filtered_market_df["snapshot_date"] == latest_snapshot_date
     ].copy()
 
-    properties_shown = int(filtered_market_df["listing_count"].sum()) if not filtered_market_df.empty else 0
+    properties_shown = (
+        int(filtered_market_df["listing_count"].sum())
+        if not filtered_market_df.empty
+        else 0
+    )
     st.sidebar.caption(f"Properties shown: {properties_shown:,}")
     st.sidebar.caption(f"Last updated: {latest_snapshot_date.date()}")
 
     if filtered_market_df.empty:
-        st.warning("No rows match the current filter selection. Adjust sidebar filters.")
+        st.warning(
+            "No rows match the current filter selection. Adjust sidebar filters."
+        )
         st.stop()
 
     latest_kpi_df = market_df.loc[
@@ -278,7 +292,9 @@ def render_dashboard_page() -> None:
     ].copy()
 
     if latest_kpi_df.empty:
-        st.warning("No rows are available for the latest snapshot in the selected date range.")
+        st.warning(
+            "No rows are available for the latest snapshot in the selected date range."
+        )
         st.stop()
 
     property_current_df = watchlist_df.loc[
@@ -297,9 +313,17 @@ def render_dashboard_page() -> None:
 
     c1, c2, c3, c4 = st.columns(4, gap="medium")
     c1.metric("Total listings", f"{total_listings:,}")
-    c2.metric("Median price", f"${median_price:,.0f}" if pd.notna(median_price) else "N/A")
-    c3.metric("Avg price / sqft", f"${avg_price_per_sqft:,.0f}" if pd.notna(avg_price_per_sqft) else "N/A")
-    c4.metric("Avg days on market", f"{avg_days_on_market:,.0f} days" if pd.notna(avg_days_on_market) else "N/A")
+    c2.metric(
+        "Median price", f"${median_price:,.0f}" if pd.notna(median_price) else "N/A"
+    )
+    c3.metric(
+        "Avg price / sqft",
+        f"${avg_price_per_sqft:,.0f}" if pd.notna(avg_price_per_sqft) else "N/A",
+    )
+    c4.metric(
+        "Avg days on market",
+        f"{avg_days_on_market:,.0f} days" if pd.notna(avg_days_on_market) else "N/A",
+    )
 
     st.divider()
 
@@ -324,10 +348,16 @@ def render_dashboard_page() -> None:
         template="plotly_white",
         height=380,
     )
-    fig_price.update_layout(showlegend=False, title_font_size=14, title_font_color="#1a1a1a")
+    fig_price.update_layout(
+        showlegend=False, title_font_size=14, title_font_color="#1a1a1a"
+    )
     fig_price.update_yaxes(tickprefix="$", tickformat=",.0f")
-    overview_col1.plotly_chart(fig_price, use_container_width=True, config=PLOTLY_CONFIG)
-    overview_col1.caption("Districts with higher average prices usually reflect stronger demand and tighter inventory.")
+    overview_col1.plotly_chart(
+        fig_price, use_container_width=True, config=PLOTLY_CONFIG
+    )
+    overview_col1.caption(
+        "Districts with higher average prices usually reflect stronger demand and tighter inventory."
+    )
 
     status_breakdown = latest_chart_df[
         ["vegas_district", "for_sale_count", "pending_count", "sold_count"]
@@ -351,7 +381,11 @@ def render_dashboard_page() -> None:
         color="listing_status",
         barmode="stack",
         title="Listing status breakdown by district",
-        labels={"vegas_district": "District", "listing_count": "Listing count", "listing_status": "Status"},
+        labels={
+            "vegas_district": "District",
+            "listing_count": "Listing count",
+            "listing_status": "Status",
+        },
         template="plotly_white",
         height=380,
         color_discrete_map={
@@ -361,7 +395,9 @@ def render_dashboard_page() -> None:
         },
     )
     fig_status.update_layout(title_font_size=14, title_font_color="#1a1a1a")
-    overview_col2.plotly_chart(fig_status, use_container_width=True, config=PLOTLY_CONFIG)
+    overview_col2.plotly_chart(
+        fig_status, use_container_width=True, config=PLOTLY_CONFIG
+    )
     overview_col2.caption("Pending rate indicates near-term demand pressure.")
 
     st.markdown("## Price structure")
@@ -375,13 +411,19 @@ def render_dashboard_page() -> None:
         trendline="ols",
         size_max=8,
         title="Price vs living area",
-        labels={"living_area": "Living area (sqft)", "price": "Price ($)", "vegas_district": "District"},
+        labels={
+            "living_area": "Living area (sqft)",
+            "price": "Price ($)",
+            "vegas_district": "District",
+        },
         template="plotly_white",
         height=380,
     )
     fig_scatter.update_layout(title_font_size=14, title_font_color="#1a1a1a")
     fig_scatter.update_yaxes(tickprefix="$", tickformat=",.0f")
-    structure_col1.plotly_chart(fig_scatter, use_container_width=True, config=PLOTLY_CONFIG)
+    structure_col1.plotly_chart(
+        fig_scatter, use_container_width=True, config=PLOTLY_CONFIG
+    )
     structure_col1.caption("Points below the trend line may indicate relative value.")
 
     fig_days = px.box(
@@ -395,7 +437,9 @@ def render_dashboard_page() -> None:
         height=380,
     )
     fig_days.update_layout(title_font_size=14, title_font_color="#1a1a1a")
-    structure_col2.plotly_chart(fig_days, use_container_width=True, config=PLOTLY_CONFIG)
+    structure_col2.plotly_chart(
+        fig_days, use_container_width=True, config=PLOTLY_CONFIG
+    )
     structure_col2.caption("Lower median = faster-moving market.")
 
     st.divider()
@@ -403,23 +447,26 @@ def render_dashboard_page() -> None:
     st.markdown("## Median price by district and bedroom count")
     heatmap_df = property_current_df.copy()
     heatmap_df["bedroom_bucket"] = heatmap_df["bedrooms"].apply(
-        lambda value: "5+" if pd.notna(value) and value >= 5 else str(int(value)) if pd.notna(value) else None
+        lambda value: (
+            "5+"
+            if pd.notna(value) and value >= 5
+            else str(int(value)) if pd.notna(value) else None
+        )
     )
     heatmap_df = heatmap_df.dropna(subset=["bedroom_bucket"])
     bedroom_order = ["1", "2", "3", "4", "5+"]
-    heatmap_pivot = (
-        heatmap_df.pivot_table(
-            index="vegas_district",
-            columns="bedroom_bucket",
-            values="price",
-            aggfunc="median",
-        )
-        .reindex(columns=bedroom_order)
-    )
+    heatmap_pivot = heatmap_df.pivot_table(
+        index="vegas_district",
+        columns="bedroom_bucket",
+        values="price",
+        aggfunc="median",
+    ).reindex(columns=bedroom_order)
     if heatmap_pivot.empty:
         st.warning("No data matches current filters.")
         st.stop()
-    heatmap_text = heatmap_pivot.applymap(lambda value: f"${value:,.0f}" if pd.notna(value) else "")
+    heatmap_text = heatmap_pivot.applymap(
+        lambda value: f"${value:,.0f}" if pd.notna(value) else ""
+    )
     heatmap_height = max(420, min(620, 120 + (len(heatmap_pivot.index) * 42)))
     fig_heatmap = px.imshow(
         heatmap_pivot,
@@ -472,7 +519,9 @@ def render_dashboard_page() -> None:
             "listing_status",
         ]
     ].copy()
-    display_watchlist["price"] = display_watchlist["price"].map(lambda value: f"${value:,.0f}" if pd.notna(value) else "N/A")
+    display_watchlist["price"] = display_watchlist["price"].map(
+        lambda value: f"${value:,.0f}" if pd.notna(value) else "N/A"
+    )
     display_watchlist["price_per_sqft"] = display_watchlist["price_per_sqft"].map(
         lambda value: f"${value:,.0f}/sqft" if pd.notna(value) else "N/A"
     )
@@ -533,7 +582,15 @@ def render_relationships_page() -> None:
     fig_rel.update_xaxes(visible=False, range=[0, 1])
     fig_rel.update_yaxes(visible=False, range=[0, 1])
 
-    fig_rel.add_shape(type="rect", x0=0.34, y0=0.34, x1=0.66, y1=0.66, line=dict(color="#1f4e79", width=2), fillcolor="#d9e8f5")
+    fig_rel.add_shape(
+        type="rect",
+        x0=0.34,
+        y0=0.34,
+        x1=0.66,
+        y1=0.66,
+        line=dict(color="#1f4e79", width=2),
+        fillcolor="#d9e8f5",
+    )
     fig_rel.add_annotation(
         x=0.50,
         y=0.50,
@@ -551,17 +608,81 @@ def render_relationships_page() -> None:
     )
 
     dim_boxes = [
-        (0.05, 0.38, 0.29, 0.62, "#e7f2e2", "<b>dim_property</b><br>PK: property_id<br>zillow_property_id<br>bedrooms, bathrooms<br>lot_size, property_type"),
-        (0.71, 0.38, 0.95, 0.62, "#fff1db", "<b>dim_location</b><br>PK: location_id<br>country, state<br>city, zip_code"),
-        (0.38, 0.72, 0.62, 0.95, "#f5e5f5", "<b>dim_date</b><br>PK: date_id<br>day_of_week, day_of_month<br>cal_month, cal_quarter<br>cal_year, is_weekend"),
+        (
+            0.05,
+            0.38,
+            0.29,
+            0.62,
+            "#e7f2e2",
+            "<b>dim_property</b><br>PK: property_id<br>zillow_property_id<br>bedrooms, bathrooms<br>lot_size, property_type",
+        ),
+        (
+            0.71,
+            0.38,
+            0.95,
+            0.62,
+            "#fff1db",
+            "<b>dim_location</b><br>PK: location_id<br>country, state<br>city, zip_code",
+        ),
+        (
+            0.38,
+            0.72,
+            0.62,
+            0.95,
+            "#f5e5f5",
+            "<b>dim_date</b><br>PK: date_id<br>day_of_week, day_of_month<br>cal_month, cal_quarter<br>cal_year, is_weekend",
+        ),
     ]
     for x0, y0, x1, y1, color, label in dim_boxes:
-        fig_rel.add_shape(type="rect", x0=x0, y0=y0, x1=x1, y1=y1, line=dict(color="#555", width=1.5), fillcolor=color)
-        fig_rel.add_annotation(x=(x0 + x1) / 2, y=(y0 + y1) / 2, showarrow=False, align="left", text=label)
+        fig_rel.add_shape(
+            type="rect",
+            x0=x0,
+            y0=y0,
+            x1=x1,
+            y1=y1,
+            line=dict(color="#555", width=1.5),
+            fillcolor=color,
+        )
+        fig_rel.add_annotation(
+            x=(x0 + x1) / 2, y=(y0 + y1) / 2, showarrow=False, align="left", text=label
+        )
 
-    fig_rel.add_annotation(x=0.29, y=0.50, ax=0.34, ay=0.50, xref="x", yref="y", axref="x", ayref="y", showarrow=True, arrowhead=3)
-    fig_rel.add_annotation(x=0.71, y=0.50, ax=0.66, ay=0.50, xref="x", yref="y", axref="x", ayref="y", showarrow=True, arrowhead=3)
-    fig_rel.add_annotation(x=0.50, y=0.72, ax=0.50, ay=0.66, xref="x", yref="y", axref="x", ayref="y", showarrow=True, arrowhead=3)
+    fig_rel.add_annotation(
+        x=0.29,
+        y=0.50,
+        ax=0.34,
+        ay=0.50,
+        xref="x",
+        yref="y",
+        axref="x",
+        ayref="y",
+        showarrow=True,
+        arrowhead=3,
+    )
+    fig_rel.add_annotation(
+        x=0.71,
+        y=0.50,
+        ax=0.66,
+        ay=0.50,
+        xref="x",
+        yref="y",
+        axref="x",
+        ayref="y",
+        showarrow=True,
+        arrowhead=3,
+    )
+    fig_rel.add_annotation(
+        x=0.50,
+        y=0.72,
+        ax=0.50,
+        ay=0.66,
+        xref="x",
+        yref="y",
+        axref="x",
+        ayref="y",
+        showarrow=True,
+        arrowhead=3,
+    )
     fig_rel.add_annotation(
         x=0.57,
         y=0.72,

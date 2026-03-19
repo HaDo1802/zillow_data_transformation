@@ -28,13 +28,33 @@ load_dotenv()
 TARGET_TABLE = "raw.raw_property_master_data"
 
 COLS = [
-    "source_file", "extracted_at","ingested_at", "zpid",
-    "price", "pricechange", "zestimate", "rentzestimate",
-    "propertytype", "bedrooms", "bathrooms", "livingarea",
-    "lotareavalue", "lotareaunit", "listingstatus", "listingsubtype",
-    "daysonzillow", "datepricechanged", "comingsoononmarketdate",
-    "contingentlistingtype", "brokername", "address",
-    "latitude", "longitude", "has3dmodel", "hasimage", "hasvideo",
+    "source_file",
+    "extracted_at",
+    "ingested_at",
+    "zpid",
+    "price",
+    "pricechange",
+    "zestimate",
+    "rentzestimate",
+    "propertytype",
+    "bedrooms",
+    "bathrooms",
+    "livingarea",
+    "lotareavalue",
+    "lotareaunit",
+    "listingstatus",
+    "listingsubtype",
+    "daysonzillow",
+    "datepricechanged",
+    "comingsoononmarketdate",
+    "contingentlistingtype",
+    "brokername",
+    "address",
+    "latitude",
+    "longitude",
+    "has3dmodel",
+    "hasimage",
+    "hasvideo",
 ]
 
 COLS_SQL = ", ".join(COLS)
@@ -42,6 +62,7 @@ COLS_SQL = ", ".join(COLS)
 # ---------------------------------------------------------------------------
 # connections
 # ---------------------------------------------------------------------------
+
 
 def get_conn() -> psycopg2.extensions.connection:
     return psycopg2.connect(
@@ -60,33 +81,39 @@ def get_storage():
         os.getenv("SUPABASE_SERVICE_ROLE_KEY"),
     )
 
+
 # ---------------------------------------------------------------------------
 # storage
 # ---------------------------------------------------------------------------
 
+
 def list_files(prefix: str = "raw") -> list[str]:
-    bucket  = os.getenv("SUPABASE_STORAGE_BUCKET")
-    objects = get_storage().storage.from_(bucket).list(
-        path=prefix,
-        options={"limit": 1000, "sortBy": {"column": "name", "order": "asc"}},
+    bucket = os.getenv("SUPABASE_STORAGE_BUCKET")
+    objects = (
+        get_storage()
+        .storage.from_(bucket)
+        .list(
+            path=prefix,
+            options={"limit": 1000, "sortBy": {"column": "name", "order": "asc"}},
+        )
     )
     return [
-        f"{prefix}/{o['name']}"
-        for o in objects
-        if o.get("name", "").endswith(".csv")
+        f"{prefix}/{o['name']}" for o in objects if o.get("name", "").endswith(".csv")
     ]
 
 
 def download(path: str) -> pd.DataFrame:
-    bucket  = os.getenv("SUPABASE_STORAGE_BUCKET")
+    bucket = os.getenv("SUPABASE_STORAGE_BUCKET")
     content = get_storage().storage.from_(bucket).download(path)
     if not content:
         raise ValueError(f"empty response: {path}")
     return pd.read_csv(BytesIO(content))
 
+
 # ---------------------------------------------------------------------------
 # preparation
 # ---------------------------------------------------------------------------
+
 
 def prepare(df: pd.DataFrame, source_file: str) -> StringIO:
     """
@@ -107,9 +134,11 @@ def prepare(df: pd.DataFrame, source_file: str) -> StringIO:
     buf.seek(0)
     return buf
 
+
 # ---------------------------------------------------------------------------
 # database
 # ---------------------------------------------------------------------------
+
 
 def insert(conn, buf: StringIO, n_rows: int) -> tuple[int, int]:
     """
@@ -120,10 +149,12 @@ def insert(conn, buf: StringIO, n_rows: int) -> tuple[int, int]:
     temp_cols = COLS_SQL.replace(", ", " text, ") + " text"
 
     with conn.cursor() as cur:
-        cur.execute(f"""
+        cur.execute(
+            f"""
             create temp table bronze_stg ({temp_cols})
             on commit drop;
-        """)
+        """
+        )
 
         cur.copy_expert(
             f"copy bronze_stg ({COLS_SQL}) "
@@ -131,23 +162,27 @@ def insert(conn, buf: StringIO, n_rows: int) -> tuple[int, int]:
             buf,
         )
 
-        cur.execute(f"""
+        cur.execute(
+            f"""
             insert into {TARGET_TABLE} ({COLS_SQL})
             select {COLS_SQL} from bronze_stg
             on conflict (zpid, source_file) do nothing;
-        """)
+        """
+        )
         inserted = cur.rowcount
 
     conn.commit()
     return inserted, n_rows - inserted
 
+
 # ---------------------------------------------------------------------------
 # orchestration
 # ---------------------------------------------------------------------------
 
+
 def load_one(path: str) -> dict:
     print(f"  downloading...")
-    df  = download(path)
+    df = download(path)
     buf = prepare(df, source_file=path)
     print(f"  {len(df)} rows in file")
 
@@ -173,15 +208,15 @@ def load_all(prefix: str = "raw") -> None:
     print(f"found {len(paths)} files\n")
 
     total_inserted = 0
-    total_skipped  = 0
-    failures       = []
+    total_skipped = 0
+    failures = []
 
     for i, path in enumerate(paths, 1):
         print(f"[{i}/{len(paths)}] {path}")
         try:
-            result          = load_one(path)
+            result = load_one(path)
             total_inserted += result["inserted"]
-            total_skipped  += result["skipped"]
+            total_skipped += result["skipped"]
         except Exception as e:
             print(f"  FAILED: {e}")
             failures.append(path)
@@ -195,15 +230,16 @@ def load_all(prefix: str = "raw") -> None:
         for f in failures:
             print(f"  {f}")
 
+
 # ---------------------------------------------------------------------------
 # entry point
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Load Zillow CSVs into bronze layer")
-    group  = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--file",  help="single file e.g. raw/raw_20260207.csv")
-    group.add_argument("--all",   action="store_true", help="load all files")
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--file", help="single file e.g. raw/raw_20260207.csv")
+    group.add_argument("--all", action="store_true", help="load all files")
     parser.add_argument("--prefix", default="raw", help="storage prefix (default: raw)")
     args = parser.parse_args()
 
