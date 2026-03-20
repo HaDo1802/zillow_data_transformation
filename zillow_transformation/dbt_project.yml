@@ -30,19 +30,26 @@ models:
       +materialized: view
       +on_schema_change: "append_new_columns"
       +schema: silver
+      staging:
+        +tags: ["daily", "silver"]
+      intermediate:
+        +tags: ["daily", "silver"]
     gold:
       dimensions:
         +materialized: table
         +schema: gold
+        +tags: ["one-time", "gold", "dimension"]
 
       facts:
         +materialized: incremental
         +on_schema_change: "append_new_columns"
         +schema: gold
+        +tags: ["daily", "gold", "fact"]
 
       marts:
         +materialized: view
         +schema: gold
+        +tags: ["daily", "gold", "mart"]
 
 # Snapshot configuration
 # snapshots:

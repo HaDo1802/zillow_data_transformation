@@ -2,6 +2,8 @@ version: 2
 
 models:
   - name: dim_property
+    config:
+      tags: ["one-time", "gold", "dimension"]
     columns:
       - name: property_id
         tests:
@@ -9,6 +11,8 @@ models:
           - unique
 
   - name: dim_date
+    config:
+      tags: ["one-time", "gold", "dimension"]
     columns:
       - name: date_day
         tests:
@@ -16,6 +20,8 @@ models:
           - unique
 
   - name: fact_property_snapshot
+    config:
+      tags: ["daily", "gold", "fact", "incremental"]
     columns:
       - name: property_id
         tests:
@@ -51,6 +57,8 @@ models:
               - snapshot_date
 
   - name: mart_property_current
+    config:
+      tags: ["daily", "gold", "mart"]
     columns:
       - name: property_id
         tests:
@@ -58,6 +66,8 @@ models:
           - unique
 
   - name: mart_market_summary
+    config:
+      tags: ["daily", "gold", "mart"]
     columns:
       - name: vegas_district
         tests:

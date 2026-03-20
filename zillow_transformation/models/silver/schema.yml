@@ -2,6 +2,8 @@ version: 2
 
 models:
   - name: stg_zillow_property_master
+    config:
+      tags: ["daily", "silver"]
     columns:
       - name: property_sk
         tests:
@@ -27,6 +29,8 @@ models:
               - source_file_key
 
   - name: int_zillow_property_history
+    config:
+      tags: ["daily", "silver", "incremental"]
     columns:
       - name: property_sk
         tests:
@@ -34,6 +38,8 @@ models:
           - unique
 
   - name: int_zillow_property_latest
+    config:
+      tags: ["daily", "silver"]
     columns:
       - name: zpid
         tests:
