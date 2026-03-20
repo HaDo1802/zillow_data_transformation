@@ -30,6 +30,7 @@ TARGET_TABLE = "raw.raw_property_master_data"
 COLS = [
     "source_file",
     "extracted_at",
+    "snapshot_date",
     "ingested_at",
     "zpid",
     "price",
@@ -124,6 +125,8 @@ def prepare(df: pd.DataFrame, source_file: str) -> StringIO:
     df.columns = df.columns.str.strip().str.lower()
     df["source_file"] = source_file
     df["ingested_at"] = pd.Timestamp.now(tz="UTC").isoformat()
+    extracted_ts = pd.to_datetime(df.get("extracted_at"), errors="coerce", utc=True)
+    df["snapshot_date"] = extracted_ts.dt.strftime("%Y-%m-%d")
 
     for col in COLS:
         if col not in df.columns:
@@ -166,7 +169,7 @@ def insert(conn, buf: StringIO, n_rows: int) -> tuple[int, int]:
             f"""
             insert into {TARGET_TABLE} ({COLS_SQL})
             select {COLS_SQL} from bronze_stg
-            on conflict (zpid, source_file) do nothing;
+            on conflict on constraint raw_property_master_data_uk do nothing;
         """
         )
         inserted = cur.rowcount
