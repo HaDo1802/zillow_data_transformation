@@ -1,0 +1,121 @@
+name: dbt CI
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "zillow_transformation/**"
+      - "scripts/python/**"
+      - "scripts/sql/**"
+      - ".github/workflows/ci.yml"
+      - ".github/workflows/cd.yml"
+      - ".env.example"
+      - "requirements.txt"
+
+env:
+  PYTHON_VERSION: "3.9"
+  SUPABASE_DB_HOST: ${{ secrets.SUPABASE_DB_HOST }}
+  SUPABASE_DB_PORT: ${{ secrets.SUPABASE_DB_PORT }}
+  SUPABASE_DB_USER: ${{ secrets.SUPABASE_DB_USER }}
+  SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+  SUPABASE_DB_NAME: ${{ secrets.SUPABASE_DB_NAME }}
+  SUPABASE_DB_SSLMODE: ${{ secrets.SUPABASE_DB_SSLMODE }}
+  SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+  SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+  SUPABASE_STORAGE_BUCKET: ${{ secrets.SUPABASE_STORAGE_BUCKET }}
+
+jobs:
+  lint:
+    name: Lint / Compile
+    runs-on: ubuntu-latest
+    env:
+      CI_RUN_ID: ${{ github.run_id }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install dbt-postgres pandas python-dotenv supabase psycopg2-binary
+
+      - name: Configure dbt profile
+        run: |
+          mkdir -p ~/.dbt
+          cp zillow_transformation/profiles.yml.example ~/.dbt/profiles.yml
+
+      - name: Install dbt packages
+        # WHY: Resolve package macros/dependencies before parsing/compiling.
+        working-directory: zillow_transformation
+        run: dbt deps
+
+      - name: Compile project for CI target
+        # WHY: Catch SQL/ref/config issues early without mutating warehouse tables.
+        working-directory: zillow_transformation
+        run: dbt compile --target ci
+
+  test:
+    name: State-based Test
+    runs-on: ubuntu-latest
+    needs: lint
+    env:
+      CI_RUN_ID: ${{ github.run_id }}
+      DATABASE_URL: postgresql://${{ secrets.SUPABASE_DB_USER }}:${{ secrets.SUPABASE_DB_PASSWORD }}@${{ secrets.SUPABASE_DB_HOST }}:${{ secrets.SUPABASE_DB_PORT }}/${{ secrets.SUPABASE_DB_NAME }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install dbt-postgres pandas python-dotenv supabase psycopg2-binary
+
+      - name: Configure dbt profile
+        run: |
+          mkdir -p ~/.dbt
+          cp zillow_transformation/profiles.yml.example ~/.dbt/profiles.yml
+
+      - name: Download prod manifest baseline
+        # WHY: Compare PR changes against last known production graph/state.
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: dbt-manifest-prod
+          path: prod-manifest
+
+      - name: Install dbt packages
+        working-directory: zillow_transformation
+        run: dbt deps
+
+      - name: Seed CI schema
+        # WHY: Ensure deterministic reference/static data exists before model builds.
+        working-directory: zillow_transformation
+        run: dbt seed --target ci
+
+      - name: Build modified graph in CI
+        # WHY: Limit CI runtime to changed nodes while deferring unchanged parents to prod state.
+        working-directory: zillow_transformation
+        run: dbt run --select state:modified+ --state ../prod-manifest --defer --target ci --full-refresh
+
+      - name: Test modified graph in CI
+        # WHY: Validate correctness only for impacted models to keep PR feedback fast.
+        working-directory: zillow_transformation
+        run: dbt test --select state:modified+ --state ../prod-manifest --target ci
+
+      - name: Drop CI schemas
+        if: always()
+        # WHY: Prevent accumulation of per-run CI schemas and control warehouse clutter/cost.
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "drop schema if exists ci_${CI_RUN_ID}_silver cascade;"
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "drop schema if exists ci_${CI_RUN_ID}_gold cascade;"

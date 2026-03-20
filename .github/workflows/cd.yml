@@ -1,0 +1,145 @@
+name: dbt CD
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "zillow_transformation/**"
+      - "scripts/python/**"
+      - "scripts/sql/**"
+      - ".github/workflows/cd.yml"
+      - ".github/workflows/ci.yml"
+      - ".env.example"
+      - "requirements.txt"
+  schedule:
+    - cron: "0 7 * * *"
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: "3.9"
+  SUPABASE_DB_HOST: ${{ secrets.SUPABASE_DB_HOST }}
+  SUPABASE_DB_PORT: ${{ secrets.SUPABASE_DB_PORT }}
+  SUPABASE_DB_USER: ${{ secrets.SUPABASE_DB_USER }}
+  SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+  SUPABASE_DB_NAME: ${{ secrets.SUPABASE_DB_NAME }}
+  SUPABASE_DB_SSLMODE: ${{ secrets.SUPABASE_DB_SSLMODE }}
+  SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+  SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+  SUPABASE_STORAGE_BUCKET: ${{ secrets.SUPABASE_STORAGE_BUCKET }}
+  SUPABASE_RAW_PREFIX: raw
+
+jobs:
+  deploy:
+    name: Deploy Changed Models
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    environment: production
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install dbt-postgres pandas python-dotenv supabase psycopg2-binary
+
+      - name: Configure dbt profile
+        run: |
+          mkdir -p ~/.dbt
+          cp zillow_transformation/profiles.yml.example ~/.dbt/profiles.yml
+
+      - name: Download prod manifest baseline
+        # WHY: State-aware deploy only rebuilds changed models relative to last successful prod graph.
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: dbt-manifest-prod
+          path: prod-manifest
+
+      - name: Install dbt packages
+        working-directory: zillow_transformation
+        run: dbt deps
+
+      - name: Seed production schema
+        # WHY: Keep reference/static seed tables current before model deployment.
+        working-directory: zillow_transformation
+        run: dbt seed --target prod
+
+      - name: Deploy modified graph to prod
+        # WHY: Ship only changed nodes, deferring unchanged dependencies for faster safe deploys.
+        working-directory: zillow_transformation
+        run: dbt run --select state:modified+ --state ../prod-manifest --defer --target prod
+
+      - name: Test modified graph in prod
+        # WHY: Validate only the changed slice immediately after deployment.
+        working-directory: zillow_transformation
+        run: dbt test --select state:modified+ --state ../prod-manifest --target prod
+
+      - name: Publish prod manifest baseline
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dbt-manifest-prod
+          path: zillow_transformation/target/manifest.json
+          retention-days: 30
+
+  daily_refresh:
+    name: Daily Incremental Refresh
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    environment: production
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install dbt-postgres pandas python-dotenv supabase psycopg2-binary
+
+      - name: Configure dbt profile
+        run: |
+          mkdir -p ~/.dbt
+          cp zillow_transformation/profiles.yml.example ~/.dbt/profiles.yml
+
+      - name: Load latest raw data
+        # WHY: Daily transformations must run on freshly ingested raw data.
+        run: python scripts/python/load_bronze.py --all --prefix "${SUPABASE_RAW_PREFIX}"
+
+      - name: Install dbt packages
+        working-directory: zillow_transformation
+        run: dbt deps
+
+      - name: Run daily-tagged models incrementally
+        # WHY: Daily pipeline should process all incremental daily assets, not state-diff deploy logic.
+        working-directory: zillow_transformation
+        run: dbt run --select tag:daily --target prod
+
+      - name: Test daily-tagged models
+        # WHY: Catch quality regressions in regularly refreshed assets.
+        working-directory: zillow_transformation
+        run: dbt test --select tag:daily --target prod
+
+      - name: Validate source freshness
+        # WHY: Ensure upstream source recency is within expected SLAs.
+        working-directory: zillow_transformation
+        run: dbt source freshness --target prod
+
+      - name: Publish prod manifest baseline
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dbt-manifest-prod
+          path: zillow_transformation/target/manifest.json
+          retention-days: 30
