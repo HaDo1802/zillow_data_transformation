@@ -3,7 +3,7 @@ name: dbt CI
 on:
   pull_request:
     branches:
-      - main
+      - master
     paths:
       - "zillow_transformation/**"
       - "scripts/python/**"

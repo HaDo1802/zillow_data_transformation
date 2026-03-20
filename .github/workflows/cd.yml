@@ -3,7 +3,7 @@ name: dbt CD
 on:
   push:
     branches:
-      - main
+      - master
     paths:
       - "zillow_transformation/**"
       - "scripts/python/**"

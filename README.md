@@ -1,281 +1,198 @@
-[![Real Estate Transformation Pipeline CI/CD](https://github.com/HaDo1802/zillow_data_transformation/actions/workflows/real-estate-transformation-cicd.yml/badge.svg)](https://github.com/HaDo1802/zillow_data_transformation/actions/workflows/real-estate-transformation-cicd.yml)
+# Zillow Real Estate Analytics (dbt + Supabase)
 
-# 🏡 Zillow Real Estate Analytics — dbt Star Schema Project
+Analytics engineering project for Zillow listing history using a bronze-silver-gold architecture, dbt Core, and GitHub Actions CI/CD.
 
-This project implements a **modern, production-style data transformation pipeline** for real estate analytics using historical Zillow property listing data. Raw snapshot-based listing data is transformed into a **well-structured star schema** using **dbt**, enabling time-aware analysis of property prices, listing behavior, and market dynamics.
-
-The project follows **industry best practices** in dimensional modeling, incremental fact tables, data quality testing, and documentation-driven development.
 ![Tech Stack](data_model_material/tech_stack.png)
 
-## 🔁 CI/CD Workflow
+## What This Project Demonstrates
 
-This repo is automated with GitHub Actions:
-- **Extract pipeline** runs daily at **6:00 AM UTC** ([separate extract workflow](https://github.com/HaDo1802/zillow_data_extract)) to land latest raw CSV in Supabase Storage.
-- **Transformation pipeline** (`.github/workflows/real-estate-transformation-cicd.yml`) runs daily at **7:00 AM UTC** (1 hour later).
-- Transform CI/CD flow: load latest raw CSV into `raw.raw_property_master_data` -> `dbt deps` -> `dbt run` -> `dbt test`.
-- Reason: This automated set-up is great for alternative option when EC2/virtual machine is not available!
+- Contract-driven modeling: raw ingestion contract is explicit and versioned in SQL + loader code.
+- Grain-first data modeling: each model has a clear business grain before metrics are added.
+- Idempotent ingestion and transformation: duplicate-safe raw loads and deterministic downstream builds.
+- State-aware deployment: only changed dbt graph nodes are promoted to production.
+- Operational discipline: CI isolation schemas, automated cleanup, and scheduled incremental refresh.
 
-## 🗂 Project Structure
+## Repository Layout
 
-```
+```text
 real_estate_transformation/
-├── zillow_transformation/
-│   ├── models/
-│   │   ├── silver/
-│   │   │   ├── staging/                # Source-aligned cleaned models
-│   │   │   │   └── stg_zillow_property_master.sql
-│   │   │   ├── intermediate/           # History + latest rollups
-│   │   │   │   ├── int_zillow_property_history.sql
-│   │   │   │   └── int_zillow_property_latest.sql
-│   │   │   └── schema.yml              # Silver tests & documentation
-│   │   ├── gold/
-│   │   │   ├── dimensions/
-│   │   │   │   ├── dim_property.sql
-│   │   │   │   └── dim_date.sql
-│   │   │   ├── facts/
-│   │   │   │   ├── fact_property_snapshot.sql
-│   │   │   │   └── fact_property_latest.sql
-│   │   │   └── schema.yml              # Gold tests & documentation
-│   ├── models/sources.yml
+├── scripts/
+│   ├── python/
+│   │   └── load_bronze.py      # 2 Load files into raw table
+│   └── sql/
+│       └── bronze_setup.sql    # 1. Use it for your raw table set up first
+├── zillow_transformation/      # 3. All transformation models using dbt
 │   ├── dbt_project.yml
-│   └── packages.yml
-├── data_model_material/                # Schema diagrams & definitions
-│   ├── Star_schema.png
-│   └── tech_stack.png
-└── README.md
+│   ├── models/
+│   │   ├── sources.yml
+│   │   ├── silver/
+│   │   │   ├── staging/stg_zillow_property_master.sql
+│   │   │   ├── intermediate/int_zillow_property_history.sql
+│   │   │   ├── intermediate/int_zillow_property_latest.sql
+│   │   │   └── schema.yml
+│   │   └── gold/
+│   │       ├── dimensions/dim_property.sql
+│   │       ├── dimensions/dim_date.sql
+│   │       ├── facts/fact_property_snapshot.sql
+│   │       ├── marts/mart_market_summary.sql
+│   │       ├── marts/mart_property_current.sql
+│   │       └── schema.yml
+└── .github/workflows/
+    ├── ci.yml
+    └── cd.yml
 ```
 
----
+## Data Architecture and Modeling Principles
 
-## ⚙️ Technology Stack
+## 1) Bronze (Raw Contract)
 
-- **Data Source**: Historical Zillow property listings, ingested via API and stored in Supabase Storage
-- **Programming Language**: SQL + Jinja (dbt)
-- **Data Warehouse**: PostgreSQL
-- **Transformation Tool**: dbt Core (v1.10+)
-- **Modeling Approach**: Kimball Star Schema
-- **Change Tracking**: Snapshot-based history in silver + incremental facts in gold
+Raw table: `raw.raw_property_master_data`  
+Setup: `scripts/sql/bronze_setup.sql`
 
-> This project intentionally uses Supabase because of it generous free cloud-Postgres, and very easy to maintain.
+Design choices:
+- Keep raw fields as text to preserve source fidelity and avoid early coercion errors.
+- Derive `snapshot_date` at ingest time from `extracted_at` (day-level, `YYYY-MM-DD`) in `load_bronze.py`.
+- Enforce idempotency with a business-level uniqueness rule:
+  - `unique (zpid, snapshot_date, price, listingstatus)`
+- Loader uses `ON CONFLICT ON CONSTRAINT raw_property_master_data_uk DO NOTHING`.
 
----
+This gives safe re-runs, backfills, and resilience to duplicated file deliveries.
 
-## 🧱 Data Architecture
-This project leverages the bronze-silver-gold methodology to structure data flow and modeling, ensuring clear separation between raw ingestion, standardized staging, and analytics-ready outputs.
-### 1️⃣ Data Source (Bronze)
+## 2) Silver (Standardization + History)
 
-Property listing data is ingested from the Zillow API and stored as a **history table**. For details about scraping and ingestion process, please refer to my repo about [zillow_data_extract](https://github.com/HaDo1802/zillow_data_extract).
+Silver models standardize schema, cast types, and apply light business normalization.
 
-Each row represents the full state of a property listing at the time of extraction.
+- `stg_zillow_property_master`: source-aligned typed staging contract.
+- `int_zillow_property_history`: historical continuity at event-level grain.
+- `int_zillow_property_latest`: latest-record projection per property.
 
-Captured attributes include:
-- Zillow property identifier
-- Snapshot date
-- Price and Zestimate values
-- Bedrooms, bathrooms, living area, lot size
-- Property type and listing status
-- Address and geospatial information
-- Listing activity flags (open house, images, 3D model)
-- Metadata timestamps
+Principle: silver is where technical quality is enforced; gold should not re-clean dirty source behavior.
 
-This raw table is **append-only** and preserves the full change history.
+## 3) Gold (Business Serving Layer)
 
----
+Gold models provide analytics-ready dimensions, facts, and marts.
 
-### 2️⃣ Staging Layer (Silver)
+- Dimensions: `dim_property`, `dim_date`
+- Fact: `fact_property_snapshot` (time-aware metrics)
+- Marts: `mart_market_summary`, `mart_property_current`
 
-**Model: `stg_zillow_property_master`**
+Principle: conformed dimensions + stable fact grain for repeatable BI semantics.
 
-Purpose:
-- Standardize column names (`snake_case`)
-- Normalize data types
-- Apply light cleansing rules
-- Preserve original grain
-
-Grain:
-> One row per property per snapshot date, defined by each ingestion run.
-
-The staging layer acts as a **contract** between raw ingestion and business modeling.
-
----
-
-### 3️⃣ Business-Ready Layer (Gold)
-
-Purpose:
-- Curate **analytics-ready** dimensions and facts for BI and reporting
-- Provide **consistent grains** and conformed keys
-- Support **point-in-time** analysis via snapshot facts
-
-Grain:
-> Dimensions are **one row per property** (latest known attributes), and the primary fact is **one row per property per snapshot date**, powering sclable, quick, and accurate business analysis.
-
----
-
-## 🌐 Data Modeling Approach ( How to brainstorm for Gold Layer)
-
-### Step 1: Business Process
-
-The core business process is **tracking real estate listings over time**.
-
-Each time Zillow data is scraped, the state of a property listing is captured.  
-Changes in price, listing status, or property attributes represent meaningful business events.
-
----
-
-### Step 2: Define the Grain
-
-The grain of the primary fact table is defined as:
-
-> **One row per property per snapshot date**
-
-This grain ensures:
-- Accurate historical analysis
-- Time-based trend evaluation
-- No loss of detail from the source
-
----
-
-### Step 3: Identify Dimensions
-
-Dimensions provide descriptive context around each listing snapshot. Leveraging **Slowly Changing Dimension 2 (SCD 2)** to overwrite the location-based columns, which happens rarely.
-
-#### `dim_property`
-Latest known property attributes including location details:
-- street_address
-- city
-- state
-- zip_code
-- vegas_district
-- latitude / longitude
-- property_type
-
----
-
-#### `dim_date`
-Standardized calendar dimension supporting:
-- calendar hierarchy (day, month, quarter, year)
-- weekend flags
-- fiscal attributes
-
-Used for all time-based joins.
-
----
-
-### Step 4: Facts for Measurement
-
-#### `fact_property_snapshot`
-
-Stores **time-variant, measurable metrics** for each snapshot:
-
-Metrics:
-- price
-- zestimate
-- rent_zestimate
-- days_on_zillow
-- bedrooms
-- bathrooms
-- living_area
-- normalized_lot_area_value / normalized_lot_area_unit
-- listing_status
-
-Flags:
-- Not currently stored in the gold facts (available in silver if needed).
-
-Foreign keys connect each record to:
-- property dimension
-- snapshot date
-
----
-
-## ⭐ Star Schema Overview
-
-The model follows a classic **star schema** design.
-
-| Fact Table Column | Dimension Table | Description |
-|------------------|-----------------|-------------|
-| property_id | dim_property | Property attributes (latest record per property) |
-| snapshot_date | dim_date | Time of snapshot |
-
-This structure supports efficient filtering, aggregation, and historical analysis.
 ![Star Schema](data_model_material/Star_schema.png)
 
----
+## Modeling Brainstorm and Design Decisions
 
-## 🛠️ Database Constraint Setup
+This is the decision path used to shape the gold model, not just the final SQL structure.
 
-After your dbt models are built, run [`utils/set_up.sql`](utils/set_up.sql) once to enforce referential and unique keys in the gold layer.
+1. Business process first
+- Core process: track how each listing changes over time (price, status, activity).
+- Modeling implication: prioritize time-variant fact design over a single current-state table. Even though the api data is not providing ideal data for time-series analysis, mainly due to my small volume of free quote, I still want to mimic the real-world production-grade handling strategy. 
 
-This script adds:
-- Primary key on `gold.dim_property(property_id)`
-- Primary key on `gold.dim_date(date_day)`
-- Composite primary key on `gold.fact_property_snapshot(property_id, snapshot_date)`
-- Foreign key from `gold.fact_property_snapshot.property_id` to `gold.dim_property.property_id`
-- Foreign key from `gold.fact_property_snapshot.snapshot_date` to `gold.dim_date.date_day`
+2. Grain before columns
+- Chosen fact grain: one row per `property_id` per `snapshot_date`.
+- Why: this supports trend analysis, avoids accidental double counting, and makes testable uniqueness explicit.
 
-Example:
+3. Dimension vs fact boundary
+- Dimensions store descriptive context with lower volatility (`dim_property`, `dim_date`). I chose SCD1 for dim_propery because the I wanted to focus on the point-in-time pricing analysis over the time-series analysis now.
+- Facts store measurable and changing values (`fact_property_snapshot`).
+- Why: keeps joins stable and avoids repeatedly storing high-cardinality descriptive text in fact tables. I am thinking of "what-if" situation when my data is scaling to millions.
+
+4. Keep both history and current-serving marts
+- Historical truth: `fact_property_snapshot`.
+- Consumer convenience: latest-serving marts (`mart_property_current`) and aggregate marts (`mart_market_summary`).
+- Why: BI users need both point-in-time analysis and fast current-state dashboards.
+
+
+## Tagging Strategy (Execution Semantics)
+
+Tags area added for better control. All models have at least 2 tags: frequency and layer
+
+- Silver folders default to: `["daily", "silver"]`
+- Gold dimensions: `["one-time", "gold", "dimension"]`
+- Gold facts: `["daily", "gold", "fact"]`
+- Gold marts: `["daily", "gold", "mart"]`
+
+This enables precise selectors like:
+- `dbt run --select tag:daily`
+- `dbt run --select tag:one-time`
+
+- Silver folders default to: `["daily", "silver"]`
+- Gold dimensions: `["one-time", "gold", "dimension"]`
+- Gold facts: `["daily", "gold", "fact"]`
+- Gold marts: `["daily", "gold", "mart"]`
+
+Model-level tags are also explicitly declared in `schema.yml` for readability and governance.
+
+This supports clean selectors like:
+- `dbt run --select tag:daily`
+- `dbt run --select tag:one-time`
+
+## CI/CD Design
+
+Workflows:
+- `.github/workflows/ci.yml`
+- `.github/workflows/cd.yml`
+
+Branch target:
+- `master`
+
+Path filters:
+- Pipelines run only for dbt/ingestion/workflow-relevant files, reducing bombarded noisy run.
+
+### CI (`pull_request -> master`)
+
+Goals: fast feedback + isolated validation, never touches prod target.
+
+1. `lint` job
+- `dbt deps`
+- `dbt compile --target ci`
+
+2. `test` job (depends on lint)
+- Download latest prod manifest artifact (`dbt-manifest-prod`, continue-on-error for bootstrap)
+- `dbt seed --target ci`
+- `dbt run --select state:modified+ --state ../prod-manifest --defer --target ci --full-refresh`
+- `dbt test --select state:modified+ --state ../prod-manifest --target ci`
+- Always drop ephemeral schemas:
+  - `ci_${CI_RUN_ID}_silver`
+  - `ci_${CI_RUN_ID}_gold`
+
+### CD
+
+Two production jobs with `environment: production`:
+
+1. `deploy` (`push -> master` and `workflow_dispatch`)
+- `dbt deps`
+- `dbt seed --target prod`
+- `dbt run --select state:modified+ --state ../prod-manifest --defer --target prod`
+- `dbt test --select state:modified+ --state ../prod-manifest --target prod`
+- Upload `target/manifest.json` as artifact `dbt-manifest-prod` (30 days)
+
+2. `daily_refresh` (`schedule: 0 7 * * *`)
+- `python scripts/python/load_bronze.py --all --prefix "${SUPABASE_RAW_PREFIX}"`
+- `dbt deps`
+- `dbt run --select tag:daily --target prod`
+- `dbt test --select tag:daily --target prod`
+- `dbt source freshness --target prod`
+- Upload fresh `dbt-manifest-prod`
+
+Important:
+- No `--full-refresh` in daily refresh.
+- Python ingestion runs from repo root.
+- All dbt commands run in `zillow_transformation/`.
+
+## Local Run Shortcuts
 
 ```bash
-psql "$DATABASE_URL" -f utils/set_up.sql
+cd zillow_transformation
+dbt deps
+dbt seed --target dev
+dbt run --target dev
+dbt test --target dev
 ```
 
-Recommended order:
-1. Load raw data into `raw.raw_property_master_data`
-2. Run `dbt run` to build/update silver and gold models
-3. Run `utils/set_up.sql` to apply key constraints
-4. Run `dbt test`
+Daily-tag local check:
 
----
-
-## 🔄 Historical Tracking
-
-Historical changes are preserved via the **snapshot-based grain** in silver and the **incremental snapshot fact** in gold. This enables point-in-time reporting without overwriting history.
-
-## 🧭 Backfill and Snapshot Grain (Important)
-
-When doing a one-time historical backfill (many CSV files loaded on the same day), load metadata like `ingested_time` and raw `snapshot_date` can be misleading for business grain.
-
-Current modeling behavior:
-- Silver event key (`property_sk`) uses: `zillow_property_id + snapshot_date + extracted_at`
-- Silver `snapshot_date` prefers `extracted_at::date` (true event date)
-- Gold `fact_property_snapshot` keeps one row per `property_id + snapshot_date` (latest record that day)
-- Gold `fact_property_latest` keeps one row per property (latest overall)
-
-Practical expectation:
-- `gold.fact_property_snapshot` row count is usually greater than or equal to `gold.fact_property_latest`
-- They are equal only if each property appears on exactly one snapshot date
-
----
-
-## 🧪 Data Quality Framework
-
-Data quality is enforced using dbt tests:
-
-- `not_null` on primary keys
-- `unique` constraints on dimension keys
-- `relationships` tests for foreign keys
-- Accepted values tests for categorical fields
-- Snapshot consistency checks
-
----
-
-## 📈 Analytics Use Cases
-
-- Property price trends over time
-- Market activity by location
-- Listing lifecycle analysis
-- Snapshot-based point-in-time reporting
-- Property attribute change tracking
-
----
-
-## 🚀 Why This Project Matters
-
-This project demonstrates:
-- Real-world dimensional modeling
-- Incremental fact table design
-- Professional dbt project structure
-- Warehouse-agnostic transformation logic
-
-It is designed to be **portfolio-ready** and easily extendable to cloud data warehouses.
-
----
+```bash
+dbt run --select tag:daily --target dev
+dbt test --select tag:daily --target dev
+```
