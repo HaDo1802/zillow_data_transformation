@@ -4,4 +4,5 @@ python-dotenv==1.0.1
 pandas>=2.0.0
 numpy>=1.24.0
 plotly>=5.20.0
+statsmodels>=0.14.0
 streamlit>=1.32.0
