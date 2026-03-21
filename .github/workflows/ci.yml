@@ -1,4 +1,5 @@
 name: dbt CI
+# Smoke-test note: harmless comment-only change for CI trigger validation.
 
 on:
   pull_request:
@@ -66,7 +67,7 @@ jobs:
     needs: lint
     env:
       CI_RUN_ID: ${{ github.run_id }}
-      DATABASE_URL: postgresql://${{ secrets.SUPABASE_DB_USER }}:${{ secrets.SUPABASE_DB_PASSWORD }}@${{ secrets.SUPABASE_DB_HOST }}:${{ secrets.SUPABASE_DB_PORT }}/${{ secrets.SUPABASE_DB_NAME }}
+      PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -140,5 +141,5 @@ jobs:
         if: always()
         # WHY: Prevent accumulation of per-run CI schemas and control warehouse clutter/cost.
         run: |
-          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "drop schema if exists ci_${CI_RUN_ID}_silver cascade;"
-          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "drop schema if exists ci_${CI_RUN_ID}_gold cascade;"
+          psql -h "${SUPABASE_DB_HOST}" -p "${SUPABASE_DB_PORT}" -U "${SUPABASE_DB_USER}" -d "${SUPABASE_DB_NAME}" -v ON_ERROR_STOP=1 -c "drop schema if exists ci_${CI_RUN_ID}_silver cascade;"
+          psql -h "${SUPABASE_DB_HOST}" -p "${SUPABASE_DB_PORT}" -U "${SUPABASE_DB_USER}" -d "${SUPABASE_DB_NAME}" -v ON_ERROR_STOP=1 -c "drop schema if exists ci_${CI_RUN_ID}_gold cascade;"
