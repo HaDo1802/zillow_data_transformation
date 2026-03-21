@@ -62,6 +62,15 @@ jobs:
           name: dbt-manifest-prod
           path: prod-manifest
 
+      - name: Check prod manifest availability
+        id: manifest_check
+        run: |
+          if [ -f prod-manifest/manifest.json ]; then
+            echo "has_manifest=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_manifest=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Install dbt packages
         working-directory: zillow_transformation
         run: dbt deps
@@ -71,15 +80,29 @@ jobs:
         working-directory: zillow_transformation
         run: dbt seed --target prod
 
-      - name: Deploy modified graph to prod
+      - name: Deploy modified graph to prod (state-aware)
         # WHY: Ship only changed nodes, deferring unchanged dependencies for faster safe deploys.
+        if: steps.manifest_check.outputs.has_manifest == 'true'
         working-directory: zillow_transformation
         run: dbt run --select state:modified+ --state ../prod-manifest --defer --target prod
 
-      - name: Test modified graph in prod
+      - name: Test modified graph in prod (state-aware)
         # WHY: Validate only the changed slice immediately after deployment.
+        if: steps.manifest_check.outputs.has_manifest == 'true'
         working-directory: zillow_transformation
         run: dbt test --select state:modified+ --state ../prod-manifest --target prod
+
+      - name: Bootstrap deploy when no prod manifest exists
+        # WHY: First run has no prior state; build full graph once to establish baseline manifest.
+        if: steps.manifest_check.outputs.has_manifest == 'false'
+        working-directory: zillow_transformation
+        run: dbt run --target prod
+
+      - name: Bootstrap tests when no prod manifest exists
+        # WHY: Validate full graph on first-run bootstrap before publishing baseline.
+        if: steps.manifest_check.outputs.has_manifest == 'false'
+        working-directory: zillow_transformation
+        run: dbt test --target prod
 
       - name: Publish prod manifest baseline
         if: success()

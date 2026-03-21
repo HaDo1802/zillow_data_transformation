@@ -94,6 +94,15 @@ jobs:
           name: dbt-manifest-prod
           path: prod-manifest
 
+      - name: Check prod manifest availability
+        id: manifest_check
+        run: |
+          if [ -f prod-manifest/manifest.json ]; then
+            echo "has_manifest=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_manifest=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Install dbt packages
         working-directory: zillow_transformation
         run: dbt deps
@@ -103,15 +112,29 @@ jobs:
         working-directory: zillow_transformation
         run: dbt seed --target ci
 
-      - name: Build modified graph in CI
+      - name: Build modified graph in CI (state-aware)
         # WHY: Limit CI runtime to changed nodes while deferring unchanged parents to prod state.
+        if: steps.manifest_check.outputs.has_manifest == 'true'
         working-directory: zillow_transformation
         run: dbt run --select state:modified+ --state ../prod-manifest --defer --target ci --full-refresh
 
-      - name: Test modified graph in CI
+      - name: Test modified graph in CI (state-aware)
         # WHY: Validate correctness only for impacted models to keep PR feedback fast.
+        if: steps.manifest_check.outputs.has_manifest == 'true'
         working-directory: zillow_transformation
         run: dbt test --select state:modified+ --state ../prod-manifest --target ci
+
+      - name: Bootstrap CI build when no prod manifest exists
+        # WHY: First pipeline runs without prior prod state; build full CI graph to validate end-to-end.
+        if: steps.manifest_check.outputs.has_manifest == 'false'
+        working-directory: zillow_transformation
+        run: dbt run --target ci --full-refresh
+
+      - name: Bootstrap CI tests when no prod manifest exists
+        # WHY: Ensure first-run PR validation still enforces data quality checks.
+        if: steps.manifest_check.outputs.has_manifest == 'false'
+        working-directory: zillow_transformation
+        run: dbt test --target ci
 
       - name: Drop CI schemas
         if: always()
