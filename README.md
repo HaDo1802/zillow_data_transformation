@@ -1,3 +1,4 @@
+[![dbt CD](https://github.com/HaDo1802/zillow_data_transformation/actions/workflows/cd.yml/badge.svg)](https://github.com/HaDo1802/zillow_data_transformation/actions/workflows/cd.yml)
 # Zillow Real Estate Analytics (dbt + Supabase)
 
 Analytics engineering project for Zillow listing history using a bronze-silver-gold architecture, dbt Core, and GitHub Actions CI/CD.

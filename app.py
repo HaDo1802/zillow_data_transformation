@@ -1,5 +1,6 @@
 import os
 import re
+from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -7,7 +8,11 @@ import plotly.express as px
 import plotly.graph_objects as go
 import psycopg2
 import streamlit as st
-from dotenv import load_dotenv
+try:
+    from dotenv import load_dotenv
+except ModuleNotFoundError:
+    def load_dotenv():
+        return None
 
 load_dotenv()
 
@@ -75,14 +80,24 @@ PLOTLY_CONFIG = {
 }
 
 
+def _get_config(name: str, default: Optional[str] = None) -> Optional[str]:
+    env_value = os.getenv(name)
+    if env_value not in (None, ""):
+        return env_value
+    if name in st.secrets:
+        value = st.secrets[name]
+        return str(value) if value is not None else default
+    return default
+
+
 def _db_conn_kwargs() -> dict:
     return {
-        "host": os.getenv("SUPABASE_DB_HOST"),
-        "port": os.getenv("SUPABASE_DB_PORT", "5432"),
-        "dbname": os.getenv("SUPABASE_DB_NAME", "postgres"),
-        "user": os.getenv("SUPABASE_DB_USER"),
-        "password": os.getenv("SUPABASE_DB_PASSWORD"),
-        "sslmode": os.getenv("SUPABASE_DB_SSLMODE", "require"),
+        "host": _get_config("SUPABASE_DB_HOST"),
+        "port": _get_config("SUPABASE_DB_PORT", "5432"),
+        "dbname": _get_config("SUPABASE_DB_NAME", "postgres"),
+        "user": _get_config("SUPABASE_DB_USER"),
+        "password": _get_config("SUPABASE_DB_PASSWORD"),
+        "sslmode": _get_config("SUPABASE_DB_SSLMODE", "require"),
     }
 
 
