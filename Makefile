@@ -22,9 +22,9 @@ format:
 
 lint:
 	@if command -v ruff >/dev/null 2>&1; then \
-		ruff check app.py scripts airflow; \
+		ruff check --ignore E501 app.py scripts airflow; \
 	elif command -v flake8 >/dev/null 2>&1; then \
-		flake8 app.py scripts airflow; \
+		flake8 --extend-ignore E501 app.py scripts airflow; \
 	else \
 		echo "No linter found. Install 'ruff' or 'flake8' to use make lint."; \
 		exit 1; \

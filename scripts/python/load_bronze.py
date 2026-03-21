@@ -184,7 +184,7 @@ def insert(conn, buf: StringIO, n_rows: int) -> tuple[int, int]:
 
 
 def load_one(path: str) -> dict:
-    print(f"  downloading...")
+    print("  downloading...")
     df = download(path)
     buf = prepare(df, source_file=path)
     print(f"  {len(df)} rows in file")
@@ -224,7 +224,7 @@ def load_all(prefix: str = "raw") -> None:
             print(f"  FAILED: {e}")
             failures.append(path)
 
-    print(f"\n--- summary ---")
+    print("\n--- summary ---")
     print(f"files processed : {len(paths) - len(failures)}/{len(paths)}")
     print(f"rows inserted   : {total_inserted}")
     print(f"rows skipped    : {total_skipped}  (already existed)")
