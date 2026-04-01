@@ -1,7 +1,6 @@
 [![dbt CD](https://github.com/HaDo1802/zillow_data_transformation/actions/workflows/cd.yml/badge.svg)](https://github.com/HaDo1802/zillow_data_transformation/actions/workflows/cd.yml)
 # Zillow Real Estate Analytics (dbt + Supabase)
-
-Analytics engineering project for Zillow listing history using a bronze-silver-gold architecture, dbt Core, and GitHub Actions CI/CD.
+An analytics engineering project demonstrating production-grade data transformation for Zillow listing history. Built with a bronze-silver-gold medallion architecture, dbt Core, and GitHub Actions CI/CD to power the [Real Estate Analytics App](https://vegas-realestate-analysis.streamlit.app/).
 
 ![Tech Stack](data_model_material/tech_stack.png)
 

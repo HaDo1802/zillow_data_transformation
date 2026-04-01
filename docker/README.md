@@ -4,28 +4,29 @@
 This runs your orchestration stack in containers so your host machine only needs Docker.
 
 ## Files
-- `docker-compose.airflow.yml`: Airflow stack
+- `docker-compose.yml`: Airflow stack
 - `docker/airflow/Dockerfile`: custom Airflow image with dbt + Python deps
 - `docker/airflow/requirements-airflow.txt`: pinned dependencies
 - `zillow_transformation/profiles.yml.example`: dbt profile template
 
 ## One-time setup
-1. Copy dbt profile template:
+1. Confirm `.env` is present and includes your Supabase credentials plus the `AIRFLOW_POSTGRES_*` variables used by Docker Compose.
+2. Copy dbt profile template:
 ```bash
 cp zillow_transformation/profiles.yml.example zillow_transformation/profiles.yml
 ```
-2. Build image:
+3. Build image:
 ```bash
-docker compose -f docker-compose.airflow.yml build
+docker compose build
 ```
-3. Initialize Airflow DB + admin user:
+4. Initialize Airflow DB + admin user:
 ```bash
-docker compose -f docker-compose.airflow.yml up airflow-init
+docker compose up airflow-init
 ```
 
 ## Start services
 ```bash
-docker compose -f docker-compose.airflow.yml up -d airflow-webserver airflow-scheduler
+docker compose up -d airflow-webserver airflow-scheduler
 ```
 
 Airflow UI:
@@ -36,20 +37,20 @@ Airflow UI:
 
 ## Trigger DAG manually
 ```bash
-docker compose -f docker-compose.airflow.yml exec airflow-scheduler \
+docker compose exec airflow-scheduler \
   airflow dags trigger real_estate_transformation \
   --conf '{"storage_file_path":"raw/raw_20260207_20260207_2306.csv"}'
 ```
 
 ## Logs
 ```bash
-docker compose -f docker-compose.airflow.yml logs -f airflow-scheduler
-docker compose -f docker-compose.airflow.yml logs -f airflow-webserver
+docker compose logs -f airflow-scheduler
+docker compose logs -f airflow-webserver
 ```
 
 ## Stop
 ```bash
-docker compose -f docker-compose.airflow.yml down
+docker compose down
 ```
 
 ## Notes for your Supabase DB setup
