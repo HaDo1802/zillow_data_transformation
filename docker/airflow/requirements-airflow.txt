@@ -1,6 +1,0 @@
-apache-airflow-providers-postgres==5.13.0
-astronomer-cosmos==1.13.1
-supabase==2.9.1
-python-dotenv==1.0.1
-pandas==2.2.3
-psycopg2-binary==2.9.9

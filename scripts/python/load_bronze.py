@@ -19,6 +19,11 @@ import psycopg2
 from dotenv import load_dotenv
 from supabase import create_client
 
+try:
+    from airflow.hooks.base import BaseHook
+except ImportError:  # local non-Airflow execution
+    BaseHook = None
+
 load_dotenv()
 
 # ---------------------------------------------------------------------------
@@ -59,13 +64,37 @@ COLS = [
 ]
 
 COLS_SQL = ", ".join(COLS)
+DEFAULT_DB_CONN_ID = os.getenv("AIRFLOW_DB_CONN_ID", "supabase_postgres")
+DEFAULT_STORAGE_CONN_ID = os.getenv("AIRFLOW_STORAGE_CONN_ID", "supabase_storage")
 
 # ---------------------------------------------------------------------------
 # connections
 # ---------------------------------------------------------------------------
 
 
-def get_conn() -> psycopg2.extensions.connection:
+def _get_airflow_connection(conn_id: str):
+    if not conn_id or BaseHook is None:
+        return None
+    try:
+        return BaseHook.get_connection(conn_id)
+    except Exception:
+        return None
+
+
+def get_conn(conn_id: str | None = None) -> psycopg2.extensions.connection:
+    conn = _get_airflow_connection(conn_id or DEFAULT_DB_CONN_ID)
+    if conn is not None:
+        return psycopg2.connect(
+            host=conn.host,
+            database=conn.schema or os.getenv("SUPABASE_DB_NAME", "postgres"),
+            user=conn.login,
+            password=conn.password,
+            port=conn.port or os.getenv("SUPABASE_DB_PORT", "5432"),
+            sslmode=conn.extra_dejson.get(
+                "sslmode", os.getenv("SUPABASE_DB_SSLMODE", "require")
+            ),
+        )
+
     return psycopg2.connect(
         host=os.getenv("SUPABASE_DB_HOST"),
         database=os.getenv("SUPABASE_DB_NAME", "postgres"),
@@ -76,7 +105,19 @@ def get_conn() -> psycopg2.extensions.connection:
     )
 
 
-def get_storage():
+def get_storage(conn_id: str | None = None):
+    conn = _get_airflow_connection(conn_id or DEFAULT_STORAGE_CONN_ID)
+    if conn is not None:
+        api_url = conn.host
+        if api_url and not api_url.startswith("http"):
+            api_url = f"https://{api_url}"
+        api_key = conn.password
+        if not api_url or not api_key:
+            raise ValueError(
+                f"Airflow connection '{conn.conn_id}' must define host and password."
+            )
+        return create_client(api_url, api_key)
+
     return create_client(
         os.getenv("SUPABASE_URL"),
         os.getenv("SUPABASE_SERVICE_ROLE_KEY"),
@@ -88,10 +129,21 @@ def get_storage():
 # ---------------------------------------------------------------------------
 
 
-def list_files(prefix: str = "raw") -> list[str]:
-    bucket = os.getenv("SUPABASE_STORAGE_BUCKET")
+def _get_storage_bucket(conn_id: str | None = None) -> str:
+    conn = _get_airflow_connection(conn_id or DEFAULT_STORAGE_CONN_ID)
+    if conn is not None:
+        bucket = conn.extra_dejson.get("bucket") or conn.extra_dejson.get(
+            "storage_bucket"
+        )
+        if bucket:
+            return bucket
+    return os.getenv("SUPABASE_STORAGE_BUCKET")
+
+
+def list_files(prefix: str = "raw", storage_conn_id: str | None = None) -> list[str]:
+    bucket = _get_storage_bucket(storage_conn_id)
     objects = (
-        get_storage()
+        get_storage(storage_conn_id)
         .storage.from_(bucket)
         .list(
             path=prefix,
@@ -103,9 +155,9 @@ def list_files(prefix: str = "raw") -> list[str]:
     ]
 
 
-def download(path: str) -> pd.DataFrame:
-    bucket = os.getenv("SUPABASE_STORAGE_BUCKET")
-    content = get_storage().storage.from_(bucket).download(path)
+def download(path: str, storage_conn_id: str | None = None) -> pd.DataFrame:
+    bucket = _get_storage_bucket(storage_conn_id)
+    content = get_storage(storage_conn_id).storage.from_(bucket).download(path)
     if not content:
         raise ValueError(f"empty response: {path}")
     return pd.read_csv(BytesIO(content))
@@ -183,13 +235,17 @@ def insert(conn, buf: StringIO, n_rows: int) -> tuple[int, int]:
 # ---------------------------------------------------------------------------
 
 
-def load_one(path: str) -> dict:
+def load_one(
+    path: str,
+    db_conn_id: str | None = None,
+    storage_conn_id: str | None = None,
+) -> dict:
     print("  downloading...")
-    df = download(path)
+    df = download(path, storage_conn_id=storage_conn_id)
     buf = prepare(df, source_file=path)
     print(f"  {len(df)} rows in file")
 
-    conn = get_conn()
+    conn = get_conn(conn_id=db_conn_id)
     try:
         inserted, skipped = insert(conn, buf, len(df))
     except Exception:
@@ -202,8 +258,12 @@ def load_one(path: str) -> dict:
     return {"path": path, "inserted": inserted, "skipped": skipped}
 
 
-def load_all(prefix: str = "raw") -> None:
-    paths = list_files(prefix)
+def load_all(
+    prefix: str = "raw",
+    db_conn_id: str | None = None,
+    storage_conn_id: str | None = None,
+) -> None:
+    paths = list_files(prefix, storage_conn_id=storage_conn_id)
     if not paths:
         print(f"no CSV files found under {prefix}/")
         return
@@ -217,7 +277,11 @@ def load_all(prefix: str = "raw") -> None:
     for i, path in enumerate(paths, 1):
         print(f"[{i}/{len(paths)}] {path}")
         try:
-            result = load_one(path)
+            result = load_one(
+                path,
+                db_conn_id=db_conn_id,
+                storage_conn_id=storage_conn_id,
+            )
             total_inserted += result["inserted"]
             total_skipped += result["skipped"]
         except Exception as e:
@@ -244,10 +308,28 @@ if __name__ == "__main__":
     group.add_argument("--file", help="single file e.g. raw/raw_20260207.csv")
     group.add_argument("--all", action="store_true", help="load all files")
     parser.add_argument("--prefix", default="raw", help="storage prefix (default: raw)")
+    parser.add_argument(
+        "--db-conn-id",
+        default=DEFAULT_DB_CONN_ID,
+        help="Airflow connection id for Postgres (default: supabase_postgres)",
+    )
+    parser.add_argument(
+        "--storage-conn-id",
+        default=DEFAULT_STORAGE_CONN_ID,
+        help="Airflow connection id for Supabase Storage API (default: supabase_storage)",
+    )
     args = parser.parse_args()
 
     if args.file:
         print(f"loading: {args.file}\n")
-        load_one(args.file)
+        load_one(
+            args.file,
+            db_conn_id=args.db_conn_id,
+            storage_conn_id=args.storage_conn_id,
+        )
     else:
-        load_all(prefix=args.prefix)
+        load_all(
+            prefix=args.prefix,
+            db_conn_id=args.db_conn_id,
+            storage_conn_id=args.storage_conn_id,
+        )
