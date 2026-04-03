@@ -108,25 +108,6 @@ def ensure_bronze_schema(conn_id: str = DEFAULT_DB_CONN_ID) -> None:
         conn.close()
 
 
-def load_bronze_prefix(
-    prefix: str = DEFAULT_RAW_PREFIX,
-    db_conn_id: str = DEFAULT_DB_CONN_ID,
-    storage_conn_id: str = DEFAULT_STORAGE_CONN_ID,
-) -> None:
-    module_path = PYTHON_SCRIPTS_DIR / "load_bronze.py"
-    spec = importlib.util.spec_from_file_location("airflow_load_bronze", module_path)
-    if spec is None or spec.loader is None:
-        raise ImportError(f"Unable to load bronze loader from {module_path}")
-
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    module.load_all(
-        prefix=prefix,
-        db_conn_id=db_conn_id,
-        storage_conn_id=storage_conn_id,
-    )
-
-
 def run_bronze_load(**context) -> None:
     module_path = PYTHON_SCRIPTS_DIR / "load_bronze.py"
     spec = importlib.util.spec_from_file_location("airflow_load_bronze", module_path)

@@ -35,7 +35,7 @@ x-airflow-common: &airflow-common
     # Logging — keep it simple for local Docker
     AIRFLOW__LOGGING__LOGGING_LEVEL: INFO
 
-    # Pass Supabase credentials through to tasks (used by load_bronze.py and manifest ops)
+    # Pass Supabase credentials through to Airflow tasks and dbt.
     SUPABASE_DB_HOST: ${SUPABASE_DB_HOST}
     SUPABASE_DB_PORT: ${SUPABASE_DB_PORT:-5432}
     SUPABASE_DB_USER: ${SUPABASE_DB_USER}
@@ -46,14 +46,12 @@ x-airflow-common: &airflow-common
     SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
     SUPABASE_STORAGE_BUCKET: ${SUPABASE_STORAGE_BUCKET}
     SUPABASE_RAW_PREFIX: ${SUPABASE_RAW_PREFIX:-raw}
+    SUPABASE_LATEST_POINTER_PATH: ${SUPABASE_LATEST_POINTER_PATH:-raw/_latest.json}
 
   volumes:
     # -------------------------------------------------------------------------
     # Named volumes: state that must survive container restarts.
     # Runtime code is baked into the image for deterministic startup on macOS.
-    # dbt_manifests is the local cache of the manifest pulled from Supabase
-    # Storage. It is NOT the source of truth — Supabase Storage is —
-    # but it protects Cosmos DAG parsing if the network call fails on startup.
     # -------------------------------------------------------------------------
     - dbt_manifests:/opt/airflow/manifests
     - airflow_logs:/opt/airflow/logs

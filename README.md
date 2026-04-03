@@ -1,5 +1,7 @@
 [![dbt CD](https://github.com/HaDo1802/zillow_data_transformation/actions/workflows/cd.yml/badge.svg)](https://github.com/HaDo1802/zillow_data_transformation/actions/workflows/cd.yml)
+
 # Zillow Real Estate Analytics (dbt + Supabase)
+
 An analytics engineering project demonstrating production-grade data transformation for Zillow listing history. Built with a bronze-silver-gold medallion architecture, dbt Core, and GitHub Actions CI/CD to power the [Real Estate Analytics App](https://vegas-realestate-analysis.streamlit.app/).
 
 ![Tech Stack](data_model_material/tech_stack.png)
@@ -17,8 +19,7 @@ An analytics engineering project demonstrating production-grade data transformat
 ```text
 real_estate_transformation/
 ├── dags/
-│   ├── daily_refresh.py        # Airflow DAG for the scheduled daily pipeline
-│   └── manifest_ops.py         # Custom Airflow operators for manifest pull/push
+│   └── daily_refresh.py        # Airflow DAG for the scheduled daily pipeline
 ├── scripts/
 │   ├── python/
 │   │   └── load_bronze.py      # 2 Load files into raw table
@@ -45,6 +46,29 @@ real_estate_transformation/
     └── cd.yml
 ```
 
+## Airflow Orchestration
+
+Airflow is the orchestration and observability layer for the local production-style pipeline.
+
+`daily_refresh` DAG automates:
+
+```text
+prepare_bronze_contract    # Set up running environment
+  -> load_bronze           # Raw data ingestion into landing layer
+  -> dbt_daily             # Cosmos renders tag:daily graph to create DAG graph
+  -> source_freshness
+```
+
+### Daily Pipeline
+
+![Airflow DAGs](data_model_material/airflow_dags.png)
+
+### Manual Backfill and Trigger Options
+
+When analysts need to backfill data, for example initial load, debugging specific days, or manually kicking off delayed pipeline, this Airflow offers explicit trigger options.
+
+![Airflow Trigger Options](data_model_material/airflow_trigger_options.png)
+
 ## Data Architecture and Modeling Principles
 
 ## 1) Bronze (Raw Contract)
@@ -53,6 +77,7 @@ Raw table: `raw.raw_property_master_data`
 Setup: `scripts/sql/bronze_setup.sql`
 
 Design choices:
+
 - Keep raw fields as text to preserve source fidelity and avoid early coercion errors.
 - Derive `snapshot_date` at ingest time from `extracted_at` (day-level, `YYYY-MM-DD`) in `load_bronze.py`.
 - Enforce idempotency with a business-level uniqueness rule:
@@ -88,23 +113,26 @@ Principle: conformed dimensions + stable fact grain for repeatable BI semantics.
 This is the decision path used to shape the gold model, not just the final SQL structure.
 
 1. Business process first
+
 - Core process: track how each listing changes over time (price, status, activity).
-- Modeling implication: prioritize time-variant fact design over a single current-state table. Even though the api data is not providing ideal data for time-series analysis, mainly due to my small volume of free quote, I still want to mimic the real-world production-grade handling strategy. 
+- Modeling implication: prioritize time-variant fact design over a single current-state table. Even though the api data is not providing ideal data for time-series analysis, mainly due to my small volume of free quote, I still want to mimic the real-world production-grade handling strategy.
 
 2. Grain before columns
+
 - Chosen fact grain: one row per `property_id` per `snapshot_date`.
 - Why: this supports trend analysis, avoids accidental double counting, and makes testable uniqueness explicit.
 
 3. Dimension vs fact boundary
+
 - Dimensions store descriptive context with lower volatility (`dim_property`, `dim_date`). I chose SCD1 for dim_propery because the I wanted to focus on the point-in-time pricing analysis over the time-series analysis now.
 - Facts store measurable and changing values (`fact_property_snapshot`).
 - Why: keeps joins stable and avoids repeatedly storing high-cardinality descriptive text in fact tables. I am thinking of "what-if" situation when my data is scaling to millions.
 
 4. Keep both history and current-serving marts
+
 - Historical truth: `fact_property_snapshot`.
 - Consumer convenience: latest-serving marts (`mart_property_current`) and aggregate marts (`mart_market_summary`).
 - Why: BI users need both point-in-time analysis and fast current-state dashboards.
-
 
 ## Tagging Strategy (Execution Semantics)
 
@@ -116,6 +144,7 @@ Tags area added for better control. All models have at least 2 tags: frequency a
 - Gold marts: `["daily", "gold", "mart"]`
 
 This enables precise selectors like:
+
 - `dbt run --select tag:daily`
 - `dbt run --select tag:one-time`
 
@@ -127,19 +156,23 @@ This enables precise selectors like:
 Model-level tags are also explicitly declared in `schema.yml` for readability and governance.
 
 This supports clean selectors like:
+
 - `dbt run --select tag:daily`
 - `dbt run --select tag:one-time`
 
 ## CI/CD Design
 
 Workflows:
+
 - `.github/workflows/ci.yml`
 - `.github/workflows/cd.yml`
 
 Branch target:
+
 - `master`
 
 Path filters:
+
 - Pipelines run only for dbt/ingestion/workflow-relevant files, reducing bombarded noisy run.
 
 ### CI (`pull_request -> master`)
@@ -147,10 +180,12 @@ Path filters:
 Goals: fast feedback + isolated validation, never touches prod target.
 
 1. `lint` job
+
 - `dbt deps`
 - `dbt compile --target ci`
 
 2. `test` job (depends on lint)
+
 - Download latest prod manifest artifact (`dbt-manifest-prod`, continue-on-error for bootstrap)
 - `dbt seed --target ci`
 - `dbt run --select state:modified+ --state ../prod-manifest --defer --target ci --full-refresh`
@@ -164,6 +199,7 @@ Goals: fast feedback + isolated validation, never touches prod target.
 Two production jobs with `environment: production`:
 
 1. `deploy` (`push -> master` and `workflow_dispatch`)
+
 - `dbt deps`
 - `dbt seed --target prod`
 - `dbt run --select state:modified+ --state ../prod-manifest --defer --target prod`
@@ -171,7 +207,8 @@ Two production jobs with `environment: production`:
 - Upload `target/manifest.json` as artifact `dbt-manifest-prod` (30 days)
 
 2. `daily_refresh` (`schedule: 0 7 * * *`)
-- `python scripts/python/load_bronze.py --all --prefix "${SUPABASE_RAW_PREFIX}"`
+
+- `python scripts/python/load_bronze.py --latest`
 - `dbt deps`
 - `dbt run --select tag:daily --target prod`
 - `dbt test --select tag:daily --target prod`
@@ -179,9 +216,45 @@ Two production jobs with `environment: production`:
 - Upload fresh `dbt-manifest-prod`
 
 Important:
+
 - No `--full-refresh` in daily refresh.
 - Python ingestion runs from repo root.
 - All dbt commands run in `zillow_transformation/`.
+
+## Airflow Local Workflow
+
+Working local Docker flow:
+
+```bash
+docker compose up airflow-init
+docker compose up -d --build
+```
+
+Validate bronze ingestion inside the scheduler container:
+
+```bash
+docker compose exec airflow-scheduler python /opt/airflow/scripts/python/load_bronze.py --latest
+```
+
+Validate dbt in the same runtime Airflow uses:
+
+```bash
+docker compose exec airflow-scheduler sh -c 'cd /opt/airflow/zillow_transformation && dbt deps --target prod && dbt compile --select tag:daily --target prod'
+```
+
+Manual Airflow trigger options for `daily_refresh`:
+
+```json
+{ "load_mode": "latest" }
+```
+
+```json
+{ "load_mode": "all" }
+```
+
+```json
+{ "load_mode": "file", "file_path": "raw/raw_20260318_20260318.csv" }
+```
 
 ## Local Run Shortcuts
 
