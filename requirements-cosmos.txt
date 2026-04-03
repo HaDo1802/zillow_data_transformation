@@ -1,0 +1,2 @@
+astronomer-cosmos==1.8.2
+supabase==2.28.0

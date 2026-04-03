@@ -16,6 +16,9 @@ An analytics engineering project demonstrating production-grade data transformat
 
 ```text
 real_estate_transformation/
+├── dags/
+│   ├── daily_refresh.py        # Airflow DAG for the scheduled daily pipeline
+│   └── manifest_ops.py         # Custom Airflow operators for manifest pull/push
 ├── scripts/
 │   ├── python/
 │   │   └── load_bronze.py      # 2 Load files into raw table

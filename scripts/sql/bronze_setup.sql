@@ -1,7 +1,6 @@
-
 create schema if not exists raw;
 
-create table raw.raw_property_master_data (
+create table if not exists raw.raw_property_master_data (
     address             text,
     bathrooms           text,
     bedrooms            text,
@@ -42,3 +41,6 @@ create table raw.raw_property_master_data (
     constraint raw_property_master_data_uk
         unique (zpid, snapshot_date, price, listingstatus)
 );
+
+create unique index if not exists raw_property_master_data_uk_idx
+    on raw.raw_property_master_data (zpid, snapshot_date, price, listingstatus);

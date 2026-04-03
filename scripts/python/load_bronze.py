@@ -7,22 +7,20 @@ Safe against partial loads — retrying a failed file completes it correctly.
 Usage:
     python scripts/load_bronze.py --file raw/raw_20260207.csv
     python scripts/load_bronze.py --all
+    python scripts/load_bronze.py --latest
     python scripts/load_bronze.py --all --prefix raw
 """
 
 import argparse
+import json
 import os
 from io import BytesIO, StringIO
+from typing import Optional
 
 import pandas as pd
 import psycopg2
 from dotenv import load_dotenv
 from supabase import create_client
-
-try:
-    from airflow.hooks.base import BaseHook
-except ImportError:  # local non-Airflow execution
-    BaseHook = None
 
 load_dotenv()
 
@@ -66,6 +64,9 @@ COLS = [
 COLS_SQL = ", ".join(COLS)
 DEFAULT_DB_CONN_ID = os.getenv("AIRFLOW_DB_CONN_ID", "supabase_postgres")
 DEFAULT_STORAGE_CONN_ID = os.getenv("AIRFLOW_STORAGE_CONN_ID", "supabase_storage")
+DEFAULT_LATEST_POINTER_PATH = os.getenv(
+    "SUPABASE_LATEST_POINTER_PATH", "raw/_latest.json"
+)
 
 # ---------------------------------------------------------------------------
 # connections
@@ -73,55 +74,70 @@ DEFAULT_STORAGE_CONN_ID = os.getenv("AIRFLOW_STORAGE_CONN_ID", "supabase_storage
 
 
 def _get_airflow_connection(conn_id: str):
-    if not conn_id or BaseHook is None:
+    if not conn_id:
         return None
+
+    try:
+        from airflow.hooks.base import BaseHook
+    except ImportError:  # local non-Airflow execution
+        return None
+
     try:
         return BaseHook.get_connection(conn_id)
     except Exception:
         return None
 
 
-def get_conn(conn_id: str | None = None) -> psycopg2.extensions.connection:
-    conn = _get_airflow_connection(conn_id or DEFAULT_DB_CONN_ID)
-    if conn is not None:
+def get_conn(conn_id: Optional[str] = None) -> psycopg2.extensions.connection:
+    env_host = os.getenv("SUPABASE_DB_HOST")
+    env_user = os.getenv("SUPABASE_DB_USER")
+    env_password = os.getenv("SUPABASE_DB_PASSWORD")
+
+    if env_host and env_user and env_password:
         return psycopg2.connect(
-            host=conn.host,
-            database=conn.schema or os.getenv("SUPABASE_DB_NAME", "postgres"),
-            user=conn.login,
-            password=conn.password,
-            port=conn.port or os.getenv("SUPABASE_DB_PORT", "5432"),
-            sslmode=conn.extra_dejson.get(
-                "sslmode", os.getenv("SUPABASE_DB_SSLMODE", "require")
-            ),
+            host=env_host,
+            database=os.getenv("SUPABASE_DB_NAME", "postgres"),
+            user=env_user,
+            password=env_password,
+            port=os.getenv("SUPABASE_DB_PORT", "5432"),
+            sslmode=os.getenv("SUPABASE_DB_SSLMODE", "require"),
         )
 
+    conn = _get_airflow_connection(conn_id or DEFAULT_DB_CONN_ID)
+    if conn is None:
+        raise ValueError("No Postgres credentials found in env vars or Airflow connection.")
+
     return psycopg2.connect(
-        host=os.getenv("SUPABASE_DB_HOST"),
-        database=os.getenv("SUPABASE_DB_NAME", "postgres"),
-        user=os.getenv("SUPABASE_DB_USER"),
-        password=os.getenv("SUPABASE_DB_PASSWORD"),
-        port=os.getenv("SUPABASE_DB_PORT", "5432"),
-        sslmode=os.getenv("SUPABASE_DB_SSLMODE", "require"),
+        host=conn.host,
+        database=conn.schema or os.getenv("SUPABASE_DB_NAME", "postgres"),
+        user=conn.login,
+        password=conn.password,
+        port=conn.port or os.getenv("SUPABASE_DB_PORT", "5432"),
+        sslmode=conn.extra_dejson.get(
+            "sslmode", os.getenv("SUPABASE_DB_SSLMODE", "require")
+        ),
     )
 
 
-def get_storage(conn_id: str | None = None):
+def get_storage(conn_id: Optional[str] = None):
+    env_url = os.getenv("SUPABASE_URL")
+    env_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+    if env_url and env_key:
+        return create_client(env_url, env_key)
+
     conn = _get_airflow_connection(conn_id or DEFAULT_STORAGE_CONN_ID)
-    if conn is not None:
-        api_url = conn.host
-        if api_url and not api_url.startswith("http"):
-            api_url = f"https://{api_url}"
-        api_key = conn.password
-        if not api_url or not api_key:
-            raise ValueError(
-                f"Airflow connection '{conn.conn_id}' must define host and password."
-            )
-        return create_client(api_url, api_key)
+    if conn is None:
+        raise ValueError("No Supabase storage credentials found in env vars or Airflow connection.")
 
-    return create_client(
-        os.getenv("SUPABASE_URL"),
-        os.getenv("SUPABASE_SERVICE_ROLE_KEY"),
-    )
+    api_url = conn.host
+    if api_url and not api_url.startswith("http"):
+        api_url = f"https://{api_url}"
+    api_key = conn.password
+    if not api_url or not api_key:
+        raise ValueError(
+            f"Airflow connection '{conn.conn_id}' must define host and password."
+        )
+    return create_client(api_url, api_key)
 
 
 # ---------------------------------------------------------------------------
@@ -129,7 +145,11 @@ def get_storage(conn_id: str | None = None):
 # ---------------------------------------------------------------------------
 
 
-def _get_storage_bucket(conn_id: str | None = None) -> str:
+def _get_storage_bucket(conn_id: Optional[str] = None) -> str:
+    env_bucket = os.getenv("SUPABASE_STORAGE_BUCKET")
+    if env_bucket:
+        return env_bucket
+
     conn = _get_airflow_connection(conn_id or DEFAULT_STORAGE_CONN_ID)
     if conn is not None:
         bucket = conn.extra_dejson.get("bucket") or conn.extra_dejson.get(
@@ -137,10 +157,10 @@ def _get_storage_bucket(conn_id: str | None = None) -> str:
         )
         if bucket:
             return bucket
-    return os.getenv("SUPABASE_STORAGE_BUCKET")
+    raise ValueError("No Supabase storage bucket found in env vars or Airflow connection.")
 
 
-def list_files(prefix: str = "raw", storage_conn_id: str | None = None) -> list[str]:
+def list_files(prefix: str = "raw", storage_conn_id: Optional[str] = None) -> list[str]:
     bucket = _get_storage_bucket(storage_conn_id)
     objects = (
         get_storage(storage_conn_id)
@@ -155,12 +175,43 @@ def list_files(prefix: str = "raw", storage_conn_id: str | None = None) -> list[
     ]
 
 
-def download(path: str, storage_conn_id: str | None = None) -> pd.DataFrame:
+def download(path: str, storage_conn_id: Optional[str] = None) -> pd.DataFrame:
+    content = download_bytes(path, storage_conn_id=storage_conn_id)
+    if not content:
+        raise ValueError(f"empty response: {path}")
+    return pd.read_csv(BytesIO(content))
+
+
+def download_bytes(path: str, storage_conn_id: Optional[str] = None) -> bytes:
     bucket = _get_storage_bucket(storage_conn_id)
     content = get_storage(storage_conn_id).storage.from_(bucket).download(path)
     if not content:
         raise ValueError(f"empty response: {path}")
-    return pd.read_csv(BytesIO(content))
+    return content
+
+
+def resolve_latest_file(
+    prefix: str = "raw",
+    storage_conn_id: Optional[str] = None,
+    latest_pointer_path: str = DEFAULT_LATEST_POINTER_PATH,
+) -> str:
+    payload = download_bytes(latest_pointer_path, storage_conn_id=storage_conn_id)
+    document = json.loads(payload.decode("utf-8"))
+
+    candidate = (
+        document.get("raw_file")
+        or document.get("path")
+        or document.get("file")
+        or document.get("latest_file")
+        or document.get("key")
+    )
+    if not candidate:
+        raise ValueError(
+            f"{latest_pointer_path} must contain one of: raw_file, path, file, latest_file, key"
+        )
+    if "/" not in candidate:
+        return f"{prefix}/{candidate}"
+    return candidate
 
 
 # ---------------------------------------------------------------------------
@@ -237,8 +288,8 @@ def insert(conn, buf: StringIO, n_rows: int) -> tuple[int, int]:
 
 def load_one(
     path: str,
-    db_conn_id: str | None = None,
-    storage_conn_id: str | None = None,
+    db_conn_id: Optional[str] = None,
+    storage_conn_id: Optional[str] = None,
 ) -> dict:
     print("  downloading...")
     df = download(path, storage_conn_id=storage_conn_id)
@@ -260,8 +311,8 @@ def load_one(
 
 def load_all(
     prefix: str = "raw",
-    db_conn_id: str | None = None,
-    storage_conn_id: str | None = None,
+    db_conn_id: Optional[str] = None,
+    storage_conn_id: Optional[str] = None,
 ) -> None:
     paths = list_files(prefix, storage_conn_id=storage_conn_id)
     if not paths:
@@ -298,6 +349,25 @@ def load_all(
             print(f"  {f}")
 
 
+def load_latest(
+    prefix: str = "raw",
+    db_conn_id: Optional[str] = None,
+    storage_conn_id: Optional[str] = None,
+    latest_pointer_path: str = DEFAULT_LATEST_POINTER_PATH,
+) -> dict:
+    path = resolve_latest_file(
+        prefix=prefix,
+        storage_conn_id=storage_conn_id,
+        latest_pointer_path=latest_pointer_path,
+    )
+    print(f"latest file selected: {path}\n")
+    return load_one(
+        path,
+        db_conn_id=db_conn_id,
+        storage_conn_id=storage_conn_id,
+    )
+
+
 # ---------------------------------------------------------------------------
 # entry point
 # ---------------------------------------------------------------------------
@@ -307,7 +377,16 @@ if __name__ == "__main__":
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--file", help="single file e.g. raw/raw_20260207.csv")
     group.add_argument("--all", action="store_true", help="load all files")
+    group.add_argument("--latest", action="store_true", help="load only the latest file")
     parser.add_argument("--prefix", default="raw", help="storage prefix (default: raw)")
+    parser.add_argument(
+        "--latest-pointer-path",
+        default=DEFAULT_LATEST_POINTER_PATH,
+        help=(
+            "storage path to the JSON document that points to the latest raw file; "
+            "default: _latest.json"
+        ),
+    )
     parser.add_argument(
         "--db-conn-id",
         default=DEFAULT_DB_CONN_ID,
@@ -326,6 +405,13 @@ if __name__ == "__main__":
             args.file,
             db_conn_id=args.db_conn_id,
             storage_conn_id=args.storage_conn_id,
+        )
+    elif args.latest:
+        load_latest(
+            prefix=args.prefix,
+            db_conn_id=args.db_conn_id,
+            storage_conn_id=args.storage_conn_id,
+            latest_pointer_path=args.latest_pointer_path,
         )
     else:
         load_all(

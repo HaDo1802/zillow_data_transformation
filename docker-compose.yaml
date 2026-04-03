@@ -1,0 +1,142 @@
+# ---------------------------------------------------------------------------
+# Zillow Analytics — Airflow orchestration stack
+#
+# LocalExecutor: tasks run as subprocesses on the scheduler container.
+# Good enough for a single-machine setup; swap CeleryExecutor if you
+# ever need parallel workers across multiple nodes.
+#
+# Usage:
+#   docker compose up airflow-init   # one-time DB migration + admin user
+#   docker compose up -d             # start all services
+#   docker compose down              # stop (data volumes preserved)
+#   docker compose down -v           # stop AND wipe ALL volumes (destructive)
+# ---------------------------------------------------------------------------
+
+x-airflow-common: &airflow-common
+  build:
+    context: .
+    dockerfile: Dockerfile
+  env_file:
+    - .env
+  environment:
+    # Core Airflow config
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+    AIRFLOW__CORE__DEFAULT_TIMEZONE: UTC
+
+    # Metadata DB — separate Postgres, NOT your Supabase warehouse
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-postgres:5432/airflow
+
+    # Webserver
+    AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "true"
+    AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_SECRET_KEY:-change-me-in-production}
+
+    # Logging — keep it simple for local Docker
+    AIRFLOW__LOGGING__LOGGING_LEVEL: INFO
+
+    # Pass Supabase credentials through to tasks (used by load_bronze.py and manifest ops)
+    SUPABASE_DB_HOST: ${SUPABASE_DB_HOST}
+    SUPABASE_DB_PORT: ${SUPABASE_DB_PORT:-5432}
+    SUPABASE_DB_USER: ${SUPABASE_DB_USER}
+    SUPABASE_DB_PASSWORD: ${SUPABASE_DB_PASSWORD}
+    SUPABASE_DB_NAME: ${SUPABASE_DB_NAME:-postgres}
+    SUPABASE_DB_SSLMODE: ${SUPABASE_DB_SSLMODE:-require}
+    SUPABASE_URL: ${SUPABASE_URL}
+    SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+    SUPABASE_STORAGE_BUCKET: ${SUPABASE_STORAGE_BUCKET}
+    SUPABASE_RAW_PREFIX: ${SUPABASE_RAW_PREFIX:-raw}
+
+  volumes:
+    # -------------------------------------------------------------------------
+    # Named volumes: state that must survive container restarts.
+    # Runtime code is baked into the image for deterministic startup on macOS.
+    # dbt_manifests is the local cache of the manifest pulled from Supabase
+    # Storage. It is NOT the source of truth — Supabase Storage is —
+    # but it protects Cosmos DAG parsing if the network call fails on startup.
+    # -------------------------------------------------------------------------
+    - dbt_manifests:/opt/airflow/manifests
+    - airflow_logs:/opt/airflow/logs
+
+  depends_on:
+    airflow-postgres:
+      condition: service_healthy
+  restart: unless-stopped
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # Airflow metadata database (dedicated Postgres — not your warehouse)
+  # ---------------------------------------------------------------------------
+  airflow-postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - airflow_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # One-shot init container: runs DB migrations and creates the admin user.
+  # Run once with: docker compose up airflow-init
+  # ---------------------------------------------------------------------------
+  airflow-init:
+    <<: *airflow-common
+    command: >
+      bash -c "
+        airflow db migrate &&
+        airflow users create --username admin --firstname Admin --lastname User --role Admin --email admin@zillow-analytics.local --password ${AIRFLOW_ADMIN_PASSWORD:-admin}
+      "
+    restart: "no"
+
+  # ---------------------------------------------------------------------------
+  # Scheduler: parses DAGs, triggers task runs, manages state.
+  # LocalExecutor means it also executes tasks — no separate worker needed.
+  # ---------------------------------------------------------------------------
+  airflow-scheduler:
+    <<: *airflow-common
+    command: >
+      bash -c "exec airflow scheduler"
+    depends_on:
+      airflow-postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "airflow jobs check --job-type SchedulerJob --hostname $(hostname)"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # Webserver: Airflow UI on http://localhost:8080
+  # ---------------------------------------------------------------------------
+  airflow-webserver:
+    <<: *airflow-common
+    command: >
+      bash -c "exec airflow webserver"
+    depends_on:
+      airflow-postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail http://localhost:8080/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+volumes:
+  airflow_postgres_data:  # Airflow metadata (DAG runs, task instances, logs)
+  airflow_logs:           # Task execution logs surfaced in the UI
+  dbt_manifests:          # Manifest cache — warm fallback if Supabase Storage unreachable
