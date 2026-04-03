@@ -1,5 +1,6 @@
 [![dbt CI](https://github.com/HaDo1802/zillow_data_transformation/actions/workflows/ci.yml/badge.svg)](https://github.com/HaDo1802/zillow_data_transformation/actions/workflows/ci.yml)
-
+[![Production Deploy](https://github.com/HaDo1802/zillow_data_transformation/actions/workflows/deploy_prod.yml/badge.svg)](https://github.com/HaDo1802/zillow_data_transformation/actions/workflows/deploy_prod.yml)
+[![Scheduled Orchestration](https://github.com/HaDo1802/zillow_data_transformation/actions/workflows/scheduled_orchestration.yml/badge.svg)](https://github.com/HaDo1802/zillow_data_transformation/actions/workflows/scheduled_orchestration.yml)
 # Zillow Real Estate Analytics (dbt + Supabase)
 
 An analytics engineering project demonstrating production-grade data transformation for Zillow listing history. Built with a bronze-silver-gold medallion architecture, dbt Core, and GitHub Actions CI/CD to power the [Real Estate Analytics App](https://vegas-realestate-analysis.streamlit.app/).
