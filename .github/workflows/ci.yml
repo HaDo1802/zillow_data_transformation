@@ -9,10 +9,15 @@ on:
       - "zillow_transformation/**"
       - "scripts/python/**"
       - "scripts/sql/**"
+      - "dags/**"
       - ".github/workflows/ci.yml"
-      - ".github/workflows/cd.yml"
-      - ".env.example"
+      - ".github/workflows/deploy_prod.yml"
+      - ".github/workflows/scheduled_orchestration.yml"
+      - "Dockerfile"
+      - "docker-compose.yaml"
       - "requirements.txt"
+      - "requirements-dbt.txt"
+      - "requirements-cosmos.txt"
 
 env:
   PYTHON_VERSION: "3.9"
@@ -44,7 +49,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install dbt-postgres pandas python-dotenv supabase psycopg2-binary
+          pip install dbt-postgres pandas python-dotenv supabase==2.28.0 psycopg2-binary
 
       - name: Configure dbt profile
         run: |
@@ -80,7 +85,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install dbt-postgres pandas python-dotenv supabase psycopg2-binary
+          pip install dbt-postgres pandas python-dotenv supabase==2.28.0 psycopg2-binary
 
       - name: Configure dbt profile
         run: |

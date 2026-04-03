@@ -1,0 +1,71 @@
+name: Scheduled Orchestration
+
+on:
+  schedule:
+    - cron: "0 7 * * *"
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: "3.9"
+  SUPABASE_DB_HOST: ${{ secrets.SUPABASE_DB_HOST }}
+  SUPABASE_DB_PORT: ${{ secrets.SUPABASE_DB_PORT }}
+  SUPABASE_DB_USER: ${{ secrets.SUPABASE_DB_USER }}
+  SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+  SUPABASE_DB_NAME: ${{ secrets.SUPABASE_DB_NAME }}
+  SUPABASE_DB_SSLMODE: ${{ secrets.SUPABASE_DB_SSLMODE }}
+  SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+  SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+  SUPABASE_STORAGE_BUCKET: ${{ secrets.SUPABASE_STORAGE_BUCKET }}
+  SUPABASE_RAW_PREFIX: raw
+  SUPABASE_LATEST_POINTER_PATH: raw/_latest.json
+
+jobs:
+  daily_refresh:
+    name: Daily Refresh
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install dbt-postgres pandas python-dotenv supabase==2.28.0 psycopg2-binary
+
+      - name: Configure dbt profile
+        run: |
+          mkdir -p ~/.dbt
+          cp zillow_transformation/profiles.yml.example ~/.dbt/profiles.yml
+
+      - name: Load latest raw data
+        run: python scripts/python/load_bronze.py --latest
+
+      - name: Install dbt packages
+        working-directory: zillow_transformation
+        run: dbt deps
+
+      - name: Run daily-tagged models incrementally
+        working-directory: zillow_transformation
+        run: dbt run --select tag:daily --target prod
+
+      - name: Test daily-tagged models
+        working-directory: zillow_transformation
+        run: dbt test --select tag:daily --target prod
+
+      - name: Validate source freshness
+        working-directory: zillow_transformation
+        run: dbt source freshness --target prod
+
+      - name: Publish prod manifest baseline
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dbt-manifest-prod
+          path: zillow_transformation/target/manifest.json
+          retention-days: 30

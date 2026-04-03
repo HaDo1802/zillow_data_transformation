@@ -1,4 +1,4 @@
-[![dbt CD](https://github.com/HaDo1802/zillow_data_transformation/actions/workflows/cd.yml/badge.svg)](https://github.com/HaDo1802/zillow_data_transformation/actions/workflows/cd.yml)
+[![dbt CI](https://github.com/HaDo1802/zillow_data_transformation/actions/workflows/ci.yml/badge.svg)](https://github.com/HaDo1802/zillow_data_transformation/actions/workflows/ci.yml)
 
 # Zillow Real Estate Analytics (dbt + Supabase)
 
@@ -43,7 +43,8 @@ real_estate_transformation/
 │   │       └── schema.yml
 └── .github/workflows/
     ├── ci.yml
-    └── cd.yml
+    ├── deploy_prod.yml
+    └── scheduled_orchestration.yml
 ```
 
 ## Airflow Orchestration
@@ -165,7 +166,8 @@ This supports clean selectors like:
 Workflows:
 
 - `.github/workflows/ci.yml`
-- `.github/workflows/cd.yml`
+- `.github/workflows/deploy_prod.yml`
+- `.github/workflows/scheduled_orchestration.yml`
 
 Branch target:
 
@@ -194,11 +196,16 @@ Goals: fast feedback + isolated validation, never touches prod target.
   - `ci_${CI_RUN_ID}_silver`
   - `ci_${CI_RUN_ID}_gold`
 
-### CD
+### Production Deploy
+Only run when the ci workflow is passed!
 
-Two production jobs with `environment: production`:
+Workflow:
 
-1. `deploy` (`push -> master` and `workflow_dispatch`)
+- `.github/workflows/deploy_prod.yml`
+
+Job:
+
+- `deploy_changed_models` (`push -> master` and `workflow_dispatch`)
 
 - `dbt deps`
 - `dbt seed --target prod`
@@ -206,7 +213,16 @@ Two production jobs with `environment: production`:
 - `dbt test --select state:modified+ --state ../prod-manifest --target prod`
 - Upload `target/manifest.json` as artifact `dbt-manifest-prod` (30 days)
 
-2. `daily_refresh` (`schedule: 0 7 * * *`)
+### Scheduled Orchestration
+My alternative option to automate the transformation pipeline instead of using EC2 or other cloud choice
+
+Workflow:
+
+- `.github/workflows/scheduled_orchestration.yml`
+
+Job:
+
+- `daily_refresh` (`schedule: 0 7 * * *` and `workflow_dispatch`)
 
 - `python scripts/python/load_bronze.py --latest`
 - `dbt deps`
@@ -218,8 +234,6 @@ Two production jobs with `environment: production`:
 Important:
 
 - No `--full-refresh` in daily refresh.
-- Python ingestion runs from repo root.
-- All dbt commands run in `zillow_transformation/`.
 
 ## Airflow Local Workflow
 
@@ -256,7 +270,7 @@ Manual Airflow trigger options for `daily_refresh`:
 { "load_mode": "file", "file_path": "raw/raw_20260318_20260318.csv" }
 ```
 
-## Local Run Shortcuts
+## Local dbt Run
 
 ```bash
 cd zillow_transformation
