@@ -3,7 +3,7 @@ version: 2
 models:
   - name: dim_property
     config:
-      tags: ["one-time", "gold", "dimension"]
+      tags: ["daily", "gold", "dimension"]
     columns:
       - name: property_id
         tests:

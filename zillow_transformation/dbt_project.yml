@@ -38,7 +38,7 @@ models:
       dimensions:
         +materialized: table
         +schema: gold
-        +tags: ["one-time", "gold", "dimension"]
+        +tags: ["gold", "dimension"]
 
       facts:
         +materialized: incremental
