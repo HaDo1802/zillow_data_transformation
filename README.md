@@ -7,8 +7,19 @@ An analytics engineering project demonstrating production-grade data transformat
 
 ![Tech Stack](data_model_material/tech_stack.png)
 
-## What This Project Demonstrates
+## Project Overview
+**Tech Stack**
 
+[![dbt](https://img.shields.io/badge/dbt-FF694B?style=for-the-badge&logo=dbt&logoColor=white)](https://www.getdbt.com/)
+[![Supabase](https://img.shields.io/badge/Supabase-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white)](https://supabase.com/)
+[![Apache Airflow](https://img.shields.io/badge/Apache%20Airflow-017CEE?style=for-the-badge&logo=apacheairflow&logoColor=white)](https://airflow.apache.org/)
+[![Astronomer Cosmos](https://img.shields.io/badge/Astronomer%20Cosmos-2D3A5A?style=for-the-badge&logo=astronomer&logoColor=white)](https://www.astronomer.io/cosmos/)
+[![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://www.docker.com/)
+[![GitHub Actions](https://img.shields.io/badge/GitHub%20Actions-2088FF?style=for-the-badge&logo=githubactions&logoColor=white)](https://github.com/features/actions)
+[![Streamlit](https://img.shields.io/badge/Streamlit-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white)](https://streamlit.io/)
+[![pytest](https://img.shields.io/badge/pytest-0A9EDC?style=for-the-badge&logo=pytest&logoColor=white)](https://pytest.org/)
+
+**Design Thinking**
 - Contract-driven modeling: raw ingestion contract is explicit and versioned in SQL + loader code.
 - Grain-first data modeling: each model has a clear business grain before metrics are added.
 - Idempotent ingestion and transformation: duplicate-safe raw loads and deterministic downstream builds.
