@@ -152,7 +152,9 @@ This is the decision path used to shape the gold model, not just the final SQL s
 Tags area added for better control. All models have at least 2 tags: frequency and layer
 
 - Silver folders default to: `["daily", "silver"]`
-- Gold dimensions: `["one-time", "gold", "dimension"]`
+- Gold dimensions:
+- `dim_property`: `["daily", "gold", "dimension"]`
+- `dim_date`: `["one-time", "gold", "dimension"]`
 - Gold facts: `["daily", "gold", "fact"]`
 - Gold marts: `["daily", "gold", "mart"]`
 
@@ -160,11 +162,6 @@ This enables precise selectors like:
 
 - `dbt run --select tag:daily`
 - `dbt run --select tag:one-time`
-
-- Silver folders default to: `["daily", "silver"]`
-- Gold dimensions: `["one-time", "gold", "dimension"]`
-- Gold facts: `["daily", "gold", "fact"]`
-- Gold marts: `["daily", "gold", "mart"]`
 
 Model-level tags are also explicitly declared in `schema.yml` for readability and governance.
 

@@ -266,9 +266,9 @@ def render_dashboard_page() -> None:
     st.sidebar.markdown("#### District")
     st.sidebar.caption("Choose one or more submarkets.")
     district_action_col1, district_action_col2 = st.sidebar.columns(2)
-    if district_action_col1.button("Select all", use_container_width=True):
+    if district_action_col1.button("Select all", width="stretch"):
         st.session_state["selected_districts"] = districts
-    if district_action_col2.button("Clear", use_container_width=True):
+    if district_action_col2.button("Clear", width="stretch"):
         st.session_state["selected_districts"] = []
 
     selected_districts = st.sidebar.multiselect(
@@ -367,9 +367,7 @@ def render_dashboard_page() -> None:
         showlegend=False, title_font_size=14, title_font_color="#1a1a1a"
     )
     fig_price.update_yaxes(tickprefix="$", tickformat=",.0f")
-    overview_col1.plotly_chart(
-        fig_price, use_container_width=True, config=PLOTLY_CONFIG
-    )
+    overview_col1.plotly_chart(fig_price, width="stretch", config=PLOTLY_CONFIG)
     overview_col1.caption(
         "Districts with higher average prices usually reflect stronger demand and tighter inventory."
     )
@@ -410,9 +408,7 @@ def render_dashboard_page() -> None:
         },
     )
     fig_status.update_layout(title_font_size=14, title_font_color="#1a1a1a")
-    overview_col2.plotly_chart(
-        fig_status, use_container_width=True, config=PLOTLY_CONFIG
-    )
+    overview_col2.plotly_chart(fig_status, width="stretch", config=PLOTLY_CONFIG)
     overview_col2.caption("Pending rate indicates near-term demand pressure.")
 
     st.markdown("## Price structure")
@@ -436,9 +432,7 @@ def render_dashboard_page() -> None:
     )
     fig_scatter.update_layout(title_font_size=14, title_font_color="#1a1a1a")
     fig_scatter.update_yaxes(tickprefix="$", tickformat=",.0f")
-    structure_col1.plotly_chart(
-        fig_scatter, use_container_width=True, config=PLOTLY_CONFIG
-    )
+    structure_col1.plotly_chart(fig_scatter, width="stretch", config=PLOTLY_CONFIG)
     structure_col1.caption("Points below the trend line may indicate relative value.")
 
     fig_days = px.box(
@@ -452,9 +446,7 @@ def render_dashboard_page() -> None:
         height=380,
     )
     fig_days.update_layout(title_font_size=14, title_font_color="#1a1a1a")
-    structure_col2.plotly_chart(
-        fig_days, use_container_width=True, config=PLOTLY_CONFIG
-    )
+    structure_col2.plotly_chart(fig_days, width="stretch", config=PLOTLY_CONFIG)
     structure_col2.caption("Lower median = faster-moving market.")
 
     st.divider()
@@ -479,8 +471,10 @@ def render_dashboard_page() -> None:
     if heatmap_pivot.empty:
         st.warning("No data matches current filters.")
         st.stop()
-    heatmap_text = heatmap_pivot.applymap(
-        lambda value: f"${value:,.0f}" if pd.notna(value) else ""
+    heatmap_text = heatmap_pivot.apply(
+        lambda column: column.map(
+            lambda value: f"${value:,.0f}" if pd.notna(value) else ""
+        )
     )
     heatmap_height = max(420, min(620, 120 + (len(heatmap_pivot.index) * 42)))
     fig_heatmap = px.imshow(
@@ -503,7 +497,7 @@ def render_dashboard_page() -> None:
     fig_heatmap.update_xaxes(side="top", tickangle=0)
     fig_heatmap.update_yaxes(automargin=True)
     fig_heatmap.update_coloraxes(colorbar_tickprefix="$", colorbar_tickformat=",.0f")
-    st.plotly_chart(fig_heatmap, use_container_width=True, config=PLOTLY_CONFIG)
+    st.plotly_chart(fig_heatmap, width="stretch", config=PLOTLY_CONFIG)
     st.caption("Empty cells indicate no listings for that combination.")
 
     st.markdown("## Value watchlist — lowest price per sqft (living area >= 800 sqft)")
@@ -546,7 +540,7 @@ def render_dashboard_page() -> None:
     display_watchlist["days_on_zillow"] = display_watchlist["days_on_zillow"].map(
         lambda value: f"{value:,.0f} days" if pd.notna(value) else "N/A"
     )
-    st.dataframe(display_watchlist, use_container_width=True, hide_index=True)
+    st.dataframe(display_watchlist, width="stretch", hide_index=True)
 
 
 def render_relationships_page() -> None:
@@ -590,7 +584,7 @@ def render_relationships_page() -> None:
             },
         ]
     )
-    st.dataframe(relationships, use_container_width=True)
+    st.dataframe(relationships, width="stretch")
 
     st.subheader("Star Schema Diagram")
     fig_rel = go.Figure()
@@ -712,7 +706,7 @@ def render_relationships_page() -> None:
     )
 
     fig_rel.update_layout(height=560, margin=dict(l=10, r=10, t=20, b=10))
-    st.plotly_chart(fig_rel, use_container_width=True)
+    st.plotly_chart(fig_rel, width="stretch")
 
     st.subheader("Example Join Query (schema_build design)")
     st.code(
@@ -779,7 +773,7 @@ def render_query_page() -> None:
             return
 
         st.success(f"Returned {len(df):,} row(s)")
-        st.dataframe(df, use_container_width=True)
+        st.dataframe(df, width="stretch")
         csv_bytes = df.to_csv(index=False).encode("utf-8")
         st.download_button(
             label="Download Result CSV",
