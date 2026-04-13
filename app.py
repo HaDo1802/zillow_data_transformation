@@ -79,6 +79,16 @@ PLOTLY_CONFIG = {
     ],
 }
 
+SCHEDULED_ORCHESTRATION_BADGE_URL = (
+    "https://github.com/HaDo1802/zillow_data_transformation/"
+    "actions/workflows/scheduled_orchestration.yml/badge.svg"
+)
+
+SCHEDULED_ORCHESTRATION_WORKFLOW_URL = (
+    "https://github.com/HaDo1802/zillow_data_transformation/"
+    "actions/workflows/scheduled_orchestration.yml"
+)
+
 
 def _get_config(name: str, default: Optional[str] = None) -> Optional[str]:
     env_value = os.getenv(name)
@@ -134,15 +144,6 @@ def _run_sql(query: str) -> pd.DataFrame:
 
 
 @st.cache_data(ttl=3600)
-def load_market_summary() -> pd.DataFrame:
-    query = """
-        select * from gold.mart_market_summary
-        order by snapshot_date desc
-    """
-    return _run_sql(query)
-
-
-@st.cache_data(ttl=3600)
 def load_property_watchlist() -> pd.DataFrame:
     query = """
         select
@@ -162,7 +163,17 @@ def load_property_watchlist() -> pd.DataFrame:
         from gold.mart_property_current
         where price is not null
           and living_area is not null
-        order by price_per_sqft asc
+        order by snapshot_date desc, price_per_sqft asc
+    """
+    return _run_sql(query)
+
+
+@st.cache_data(ttl=3600)
+def load_portfolio_coverage() -> pd.DataFrame:
+    query = """
+        select
+            count(property_id) as current_properties
+        from gold.mart_property_current
     """
     return _run_sql(query)
 
@@ -237,22 +248,37 @@ def render_dashboard_page() -> None:
     )
 
     try:
-        market_df = load_market_summary()
         watchlist_df = load_property_watchlist()
+        coverage_df = load_portfolio_coverage()
     except Exception as exc:
         st.error(f"Failed to load data from Supabase: {exc}")
         st.stop()
 
-    if market_df.empty:
-        st.warning("No rows returned from `gold.mart_market_summary`.")
+    if watchlist_df.empty:
+        st.warning("No rows returned from `gold.mart_property_current`.")
         st.stop()
 
-    market_df = market_df.copy()
     watchlist_df = watchlist_df.copy()
-    market_df["snapshot_date"] = pd.to_datetime(market_df["snapshot_date"])
     watchlist_df["snapshot_date"] = pd.to_datetime(watchlist_df["snapshot_date"])
+    latest_snapshot_date = watchlist_df["snapshot_date"].max()
 
-    districts = sorted(market_df["vegas_district"].dropna().unique().tolist())
+    st.markdown(
+        f"""
+        <div style="display:flex; align-items:center; gap:12px; margin:0.25rem 0 1rem 0; flex-wrap:wrap;">
+          <a href="{SCHEDULED_ORCHESTRATION_WORKFLOW_URL}" target="_blank">
+            <img src="{SCHEDULED_ORCHESTRATION_BADGE_URL}" alt="Scheduled orchestration status" />
+          </a>
+          <span style="font-size:0.95rem; color:#166534; font-weight:600;">
+            Transformation updated through {latest_snapshot_date.date()}
+          </span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    property_current_df = watchlist_df.copy()
+
+    districts = sorted(property_current_df["vegas_district"].dropna().unique().tolist())
     if "selected_districts" not in st.session_state:
         st.session_state["selected_districts"] = districts
     else:
@@ -279,55 +305,32 @@ def render_dashboard_page() -> None:
         label_visibility="collapsed",
         placeholder="Select district(s)",
     )
-    latest_snapshot_date = market_df["snapshot_date"].max()
-    filtered_market_df = market_df.loc[
-        market_df["vegas_district"].isin(selected_districts)
-    ].copy()
-    filtered_market_df = filtered_market_df.loc[
-        filtered_market_df["snapshot_date"] == latest_snapshot_date
+    property_current_df = property_current_df.loc[
+        property_current_df["vegas_district"].isin(selected_districts)
     ].copy()
 
     properties_shown = (
-        int(filtered_market_df["listing_count"].sum())
-        if not filtered_market_df.empty
+        int(property_current_df["property_id"].count())
+        if not property_current_df.empty
         else 0
     )
     st.sidebar.caption(f"Properties shown: {properties_shown:,}")
     st.sidebar.caption(f"Last updated: {latest_snapshot_date.date()}")
 
-    if filtered_market_df.empty:
+    if property_current_df.empty:
         st.warning(
             "No rows match the current filter selection. Adjust sidebar filters."
         )
         st.stop()
 
-    latest_kpi_df = market_df.loc[
-        market_df["vegas_district"].isin(selected_districts)
-        & (market_df["snapshot_date"] == latest_snapshot_date)
-    ].copy()
-
-    if latest_kpi_df.empty:
-        st.warning(
-            "No rows are available for the latest snapshot in the selected date range."
-        )
-        st.stop()
-
-    property_current_df = watchlist_df.loc[
-        watchlist_df["vegas_district"].isin(selected_districts)
-    ].copy()
-
-    if property_current_df.empty:
-        st.warning("No data matches current filters.")
-        st.stop()
-
     # st.markdown("## KPI metrics")
-    total_listings = int(latest_kpi_df["listing_count"].sum())
-    median_price = latest_kpi_df["median_price"].median()
-    avg_price_per_sqft = latest_kpi_df["avg_price_per_sqft"].mean()
-    avg_days_on_market = latest_kpi_df["avg_days_on_zillow"].mean()
+    current_properties = int(coverage_df["current_properties"].iloc[0])
+    median_price = property_current_df["price"].median()
+    avg_price_per_sqft = property_current_df["price_per_sqft"].mean()
+    avg_days_on_market = property_current_df["days_on_zillow"].mean()
 
     c1, c2, c3, c4 = st.columns(4, gap="medium")
-    c1.metric("Total listings", f"{total_listings:,}")
+    c1.metric("Current properties", f"{current_properties:,}")
     c2.metric(
         "Median price", f"${median_price:,.0f}" if pd.notna(median_price) else "N/A"
     )
@@ -343,23 +346,20 @@ def render_dashboard_page() -> None:
     st.divider()
 
     st.markdown("## Market overview")
-    latest_chart_df = filtered_market_df.loc[
-        filtered_market_df["snapshot_date"] == filtered_market_df["snapshot_date"].max()
-    ].copy()
     district_price = (
-        filtered_market_df.groupby("vegas_district", as_index=False)["avg_price"]
+        property_current_df.groupby("vegas_district", as_index=False)["price"]
         .mean()
-        .sort_values("avg_price", ascending=False)
+        .sort_values("price", ascending=False)
     )
 
     overview_col1, overview_col2 = st.columns(2)
     fig_price = px.bar(
         district_price,
         x="vegas_district",
-        y="avg_price",
+        y="price",
         color="vegas_district",
         title="Average price by district",
-        labels={"vegas_district": "District", "avg_price": "Average price"},
+        labels={"vegas_district": "District", "price": "Average price"},
         template="plotly_white",
         height=380,
     )
@@ -372,20 +372,11 @@ def render_dashboard_page() -> None:
         "Districts with higher average prices usually reflect stronger demand and tighter inventory."
     )
 
-    status_breakdown = latest_chart_df[
-        ["vegas_district", "for_sale_count", "pending_count", "sold_count"]
-    ].melt(
-        id_vars="vegas_district",
-        value_vars=["for_sale_count", "pending_count", "sold_count"],
-        var_name="listing_status",
-        value_name="listing_count",
-    )
-    status_breakdown["listing_status"] = status_breakdown["listing_status"].map(
-        {
-            "for_sale_count": "FOR_SALE",
-            "pending_count": "PENDING",
-            "sold_count": "SOLD",
-        }
+    status_breakdown = (
+        property_current_df.groupby(["vegas_district", "listing_status"], as_index=False)
+        ["property_id"]
+        .count()
+        .rename(columns={"property_id": "listing_count"})
     )
     fig_status = px.bar(
         status_breakdown,
