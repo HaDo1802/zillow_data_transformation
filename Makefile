@@ -1,43 +1,29 @@
 SHELL := /bin/zsh
 
-.PHONY: help format lint check python-check dbt-check
+.PHONY: help sync format lint check python-check dbt-check
 
 help:
 	@echo "Available targets:"
-	@echo "  make format       Format Python with ruff/black if installed"
-	@echo "  make lint         Lint Python with ruff/flake8 if installed"
-	@echo "  make check        Run Python syntax checks and dbt parse/test if dbt is installed"
+	@echo "  make sync         Install/update local dependencies via uv"
+	@echo "  make format       Format Python with ruff"
+	@echo "  make lint         Lint Python with ruff"
+	@echo "  make check        Run Python syntax checks and dbt parse/test"
 	@echo "  make python-check Run Python syntax checks"
 	@echo "  make dbt-check    Run dbt parse and dbt test from zillow_transformation/"
 
+sync:
+	uv sync --group dbt --group streamlit --group dev
+
 format:
-	@if command -v ruff >/dev/null 2>&1; then \
-		ruff format app.py scripts airflow; \
-	elif command -v black >/dev/null 2>&1; then \
-		black app.py scripts airflow; \
-	else \
-		echo "No formatter found. Install 'ruff' or 'black' to use make format."; \
-		exit 1; \
-	fi
+	uv run ruff format app.py scripts dags
 
 lint:
-	@if command -v ruff >/dev/null 2>&1; then \
-		ruff check --ignore E501 app.py scripts airflow; \
-	elif command -v flake8 >/dev/null 2>&1; then \
-		flake8 --extend-ignore E501 app.py scripts airflow; \
-	else \
-		echo "No linter found. Install 'ruff' or 'flake8' to use make lint."; \
-		exit 1; \
-	fi
+	uv run ruff check app.py scripts dags
 
 check: python-check dbt-check
 
 python-check:
-	@PYTHONPYCACHEPREFIX=/tmp python3 -m py_compile app.py
+	@PYTHONPYCACHEPREFIX=/tmp uv run python -m py_compile app.py
 
 dbt-check:
-	@if command -v dbt >/dev/null 2>&1; then \
-		cd zillow_transformation && dbt parse --target dev && dbt test --target dev; \
-	else \
-		echo "dbt not found. Skipping dbt checks."; \
-	fi
+	@cd zillow_transformation && uv run dbt parse --target dev && uv run dbt test --target dev

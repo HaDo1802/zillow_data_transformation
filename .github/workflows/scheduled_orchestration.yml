@@ -6,7 +6,6 @@ on:
   workflow_dispatch:
 
 env:
-  PYTHON_VERSION: "3.9"
   SUPABASE_DB_HOST: ${{ secrets.SUPABASE_DB_HOST }}
   SUPABASE_DB_PORT: ${{ secrets.SUPABASE_DB_PORT }}
   SUPABASE_DB_USER: ${{ secrets.SUPABASE_DB_USER }}
@@ -28,15 +27,13 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v4
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          enable-caching: true
 
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install dbt-postgres pandas python-dotenv supabase==2.28.0 psycopg2-binary
+        run: uv sync --group dbt
 
       - name: Configure dbt profile
         run: |
@@ -44,23 +41,23 @@ jobs:
           cp zillow_transformation/profiles.yml.example ~/.dbt/profiles.yml
 
       - name: Load latest raw data
-        run: python scripts/python/load_bronze.py --latest
+        run: uv run python scripts/python/load_bronze.py --latest
 
       - name: Install dbt packages
         working-directory: zillow_transformation
-        run: dbt deps
+        run: uv run dbt deps
 
       - name: Run daily-tagged models incrementally
         working-directory: zillow_transformation
-        run: dbt run --select tag:daily --target prod
+        run: uv run dbt run --select tag:daily --target prod
 
       - name: Test daily-tagged models
         working-directory: zillow_transformation
-        run: dbt test --select tag:daily --target prod
+        run: uv run dbt test --select tag:daily --target prod
 
       - name: Validate source freshness
         working-directory: zillow_transformation
-        run: dbt source freshness --target prod
+        run: uv run dbt source freshness --target prod
 
       - name: Publish prod manifest baseline
         if: success()

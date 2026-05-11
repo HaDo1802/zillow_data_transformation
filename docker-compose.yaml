@@ -1,17 +1,3 @@
-# ---------------------------------------------------------------------------
-# Zillow Analytics — Airflow orchestration stack
-#
-# LocalExecutor: tasks run as subprocesses on the scheduler container.
-# Good enough for a single-machine setup; swap CeleryExecutor if you
-# ever need parallel workers across multiple nodes.
-#
-# Usage:
-#   docker compose up airflow-init   # one-time DB migration + admin user
-#   docker compose up -d             # start all services
-#   docker compose down              # stop (data volumes preserved)
-#   docker compose down -v           # stop AND wipe ALL volumes (destructive)
-# ---------------------------------------------------------------------------
-
 x-airflow-common: &airflow-common
   build:
     context: .
