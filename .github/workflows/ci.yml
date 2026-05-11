@@ -1,5 +1,4 @@
 name: dbt CI
-# Smoke-test note: harmless comment-only change for CI trigger validation.
 
 on:
   pull_request:
@@ -15,12 +14,10 @@ on:
       - ".github/workflows/scheduled_orchestration.yml"
       - "Dockerfile"
       - "docker-compose.yaml"
-      - "requirements.txt"
-      - "requirements-dbt.txt"
-      - "requirements-cosmos.txt"
+      - "pyproject.toml"
+      - "uv.lock"
 
 env:
-  PYTHON_VERSION: "3.9"
   SUPABASE_DB_HOST: ${{ secrets.SUPABASE_DB_HOST }}
   SUPABASE_DB_PORT: ${{ secrets.SUPABASE_DB_PORT }}
   SUPABASE_DB_USER: ${{ secrets.SUPABASE_DB_USER }}
@@ -41,15 +38,13 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v4
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          enable-caching: true
 
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install dbt-postgres pandas python-dotenv supabase==2.28.0 psycopg2-binary
+        run: uv sync --group dbt
 
       - name: Configure dbt profile
         run: |
@@ -57,14 +52,12 @@ jobs:
           cp zillow_transformation/profiles.yml.example ~/.dbt/profiles.yml
 
       - name: Install dbt packages
-        # WHY: Resolve package macros/dependencies before parsing/compiling.
         working-directory: zillow_transformation
-        run: dbt deps
+        run: uv run dbt deps
 
       - name: Compile project for CI target
-        # WHY: Catch SQL/ref/config issues early without mutating warehouse tables.
         working-directory: zillow_transformation
-        run: dbt compile --target ci
+        run: uv run dbt compile --target ci
 
   test:
     name: State-based Test
@@ -77,15 +70,13 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v4
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          enable-caching: true
 
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install dbt-postgres pandas python-dotenv supabase==2.28.0 psycopg2-binary
+        run: uv sync --group dbt
 
       - name: Configure dbt profile
         run: |
@@ -93,7 +84,6 @@ jobs:
           cp zillow_transformation/profiles.yml.example ~/.dbt/profiles.yml
 
       - name: Download prod manifest baseline
-        # WHY: Compare PR changes against last known production graph/state.
         uses: actions/download-artifact@v4
         continue-on-error: true
         with:
@@ -111,40 +101,34 @@ jobs:
 
       - name: Install dbt packages
         working-directory: zillow_transformation
-        run: dbt deps
+        run: uv run dbt deps
 
       - name: Seed CI schema
-        # WHY: Ensure deterministic reference/static data exists before model builds.
         working-directory: zillow_transformation
-        run: dbt seed --target ci
+        run: uv run dbt seed --target ci
 
       - name: Build modified graph in CI (state-aware)
-        # WHY: Limit CI runtime to changed nodes while deferring unchanged parents to prod state.
         if: steps.manifest_check.outputs.has_manifest == 'true'
         working-directory: zillow_transformation
-        run: dbt run --select state:modified+ --state ../prod-manifest --defer --target ci --full-refresh
+        run: uv run dbt run --select state:modified+ --state ../prod-manifest --defer --target ci --full-refresh
 
       - name: Test modified graph in CI (state-aware)
-        # WHY: Validate correctness only for impacted models to keep PR feedback fast.
         if: steps.manifest_check.outputs.has_manifest == 'true'
         working-directory: zillow_transformation
-        run: dbt test --select state:modified+ --state ../prod-manifest --target ci
+        run: uv run dbt test --select state:modified+ --state ../prod-manifest --target ci
 
       - name: Bootstrap CI build when no prod manifest exists
-        # WHY: First pipeline runs without prior prod state; build full CI graph to validate end-to-end.
         if: steps.manifest_check.outputs.has_manifest == 'false'
         working-directory: zillow_transformation
-        run: dbt run --target ci --full-refresh
+        run: uv run dbt run --target ci --full-refresh
 
       - name: Bootstrap CI tests when no prod manifest exists
-        # WHY: Ensure first-run PR validation still enforces data quality checks.
         if: steps.manifest_check.outputs.has_manifest == 'false'
         working-directory: zillow_transformation
-        run: dbt test --target ci
+        run: uv run dbt test --target ci
 
       - name: Drop CI schemas
         if: always()
-        # WHY: Prevent accumulation of per-run CI schemas and control warehouse clutter/cost.
         run: |
           psql -h "${SUPABASE_DB_HOST}" -p "${SUPABASE_DB_PORT}" -U "${SUPABASE_DB_USER}" -d "${SUPABASE_DB_NAME}" -v ON_ERROR_STOP=1 -c "drop schema if exists ci_${CI_RUN_ID}_silver cascade;"
           psql -h "${SUPABASE_DB_HOST}" -p "${SUPABASE_DB_PORT}" -U "${SUPABASE_DB_USER}" -d "${SUPABASE_DB_NAME}" -v ON_ERROR_STOP=1 -c "drop schema if exists ci_${CI_RUN_ID}_gold cascade;"
