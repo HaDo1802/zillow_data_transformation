@@ -31,8 +31,8 @@ RUN pip install --no-cache-dir \
 # already requires — so there is no conflict and no install-order trick needed.
 RUN pip install --no-cache-dir \
     "astronomer-cosmos==1.8.2" \
-    "dbt-core~=1.8.7" \
-    "dbt-postgres~=1.8.2"
+    "dbt-core==1.8.7" \
+    "dbt-postgres==1.8.2"
 
 # astronomer-cosmos installs its code under cosmos/ not astronomer/cosmos/
 # Python's import system needs an astronomer/ namespace directory to find it
