@@ -6,7 +6,7 @@ models:
       tags: ["daily", "gold", "dimension"]
     columns:
       - name: property_id
-        tests:
+        data_tests:
           - not_null
           - unique
 
@@ -15,7 +15,7 @@ models:
       tags: ["one-time", "gold", "dimension"]
     columns:
       - name: date_day
-        tests:
+        data_tests:
           - not_null
           - unique
 
@@ -24,44 +24,41 @@ models:
       tags: ["daily", "gold", "fact", "incremental"]
     columns:
       - name: property_id
-        tests:
+        data_tests:
           - not_null
           - relationships:
-              arguments:
-                to: ref('dim_property')
-                field: property_id
+              to: ref('dim_property')
+              field: property_id
       - name: snapshot_date
-        tests:
+        data_tests:
           - not_null
           - relationships:
-              arguments:
-                to: ref('dim_date')
-                field: date_day
+              to: ref('dim_date')
+              field: date_day
       - name: price
-        tests:
+        data_tests:
           - not_null
       - name: living_area
-        tests:
+        data_tests:
           - not_null
       - name: listing_status
-        tests:
+        data_tests:
           - not_null
       - name: bedrooms
-        tests:
+        data_tests:
           - not_null
-    tests:
+    data_tests:
       - dbt_utils.unique_combination_of_columns:
-          arguments:
-            combination_of_columns:
-              - property_id
-              - snapshot_date
+          combination_of_columns:
+            - property_id
+            - snapshot_date
 
   - name: mart_property_current
     config:
       tags: ["daily", "gold", "mart"]
     columns:
       - name: property_id
-        tests:
+        data_tests:
           - not_null
           - unique
 
@@ -70,17 +67,16 @@ models:
       tags: ["daily", "gold", "mart"]
     columns:
       - name: vegas_district
-        tests:
+        data_tests:
           - not_null
       - name: snapshot_date
-        tests:
+        data_tests:
           - not_null
       - name: listing_count
-        tests:
+        data_tests:
           - not_null
-    tests:
+    data_tests:
       - dbt_utils.unique_combination_of_columns:
-          arguments:
-            combination_of_columns:
-              - vegas_district
-              - snapshot_date
+          combination_of_columns:
+            - vegas_district
+            - snapshot_date

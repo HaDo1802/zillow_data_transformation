@@ -6,34 +6,33 @@ models:
       tags: ["daily", "silver"]
     columns:
       - name: property_sk
-        tests:
+        data_tests:
           - not_null
           - unique
       - name: zpid
-        tests:
+        data_tests:
           - not_null
       - name: extracted_at
-        tests:
+        data_tests:
           - not_null
       - name: snapshot_date
-        tests:
+        data_tests:
           - not_null
       - name: source_file_key
-        tests:
+        data_tests:
           - not_null
-    tests:
+    data_tests:
       - dbt_utils.unique_combination_of_columns:
-          arguments:
-            combination_of_columns:
-              - zpid
-              - source_file_key
+          combination_of_columns:
+            - zpid
+            - source_file_key
 
   - name: int_zillow_property_history
     config:
       tags: ["daily", "silver", "incremental"]
     columns:
       - name: property_sk
-        tests:
+        data_tests:
           - not_null
           - unique
 
@@ -42,6 +41,6 @@ models:
       tags: ["daily", "silver"]
     columns:
       - name: zpid
-        tests:
+        data_tests:
           - not_null
           - unique

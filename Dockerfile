@@ -26,20 +26,13 @@ RUN pip install --no-cache-dir \
     "supabase>=2.28.0" \
     "psycopg2-binary>=2.9.11"
 
-# Install cosmos BEFORE dbt — cosmos resolves through Airflow's existing opentelemetry
-# packages and would downgrade protobuf to <5 if dbt were already present.
-# With cosmos installed first, protobuf is still at the base-image version (4.25.x).
-RUN pip install --no-cache-dir "astronomer-cosmos==1.8.2"
-
-# Install dbt after cosmos. dbt-adapters and dbt-common both require protobuf>=6.0,
-# so pip upgrades protobuf to 6.32.1 here. Cosmos is already installed and pip won't
-# re-resolve it, so protobuf stays at 6.32.1 for the rest of the image.
+# Install cosmos and dbt together so pip resolves all constraints in one pass.
+# dbt-core 1.8.x requires protobuf<5 — the same range Airflow's opentelemetry-proto
+# already requires — so there is no conflict and no install-order trick needed.
 RUN pip install --no-cache-dir \
-    "dbt-core==1.10.11" \
-    "dbt-postgres==1.9.1" \
-    "dbt-adapters==1.16.7" \
-    "dbt-common==1.31.0" \
-    "protobuf==6.32.1"
+    "astronomer-cosmos==1.8.2" \
+    "dbt-core==1.8.7" \
+    "dbt-postgres==1.8.2"
 
 # astronomer-cosmos installs its code under cosmos/ not astronomer/cosmos/
 # Python's import system needs an astronomer/ namespace directory to find it
